@@ -43,8 +43,8 @@ def convert_schema_to_text(yaml_data):
     
     return schema_context
 
-# Set up OpenAI API key
-openai.api_key = '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'
+# Get OpenAI API key from Streamlit secrets
+openai.api_key = st.secrets["openai"]["api_key"]
 
 # Placeholder for fine-tuned model ID
 fine_tuned_model_id = "ft:gpt-3.5-turbo-1106:porter:querygpt-2:BE9QPw3E"
