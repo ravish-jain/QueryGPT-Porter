@@ -44,7 +44,7 @@ def convert_schema_to_text(yaml_data):
     return schema_context
 
 # Set up OpenAI API key
-openai.api_key = ''
+openai.api_key = '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'
 
 # Placeholder for fine-tuned model ID
 fine_tuned_model_id = "ft:gpt-3.5-turbo-1106:porter:querygpt-2:BE9QPw3E"
