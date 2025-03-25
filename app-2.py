@@ -19,6 +19,7 @@ def convert_schema_to_text(yaml_data):
         # Iterate over each column in the model (table)
         for column in model['columns']:
             column_desc = column.get('description', '')
+            data_type = column['data_type']
             
             # Handle data tests (e.g., unique, not_null)
             tests = column.get('data_tests', [])
