@@ -2,42 +2,38 @@ import streamlit as st
 import openai
 from core.yaml_schema_parser import SchemaLoader
 from core.few_shot_examples_loader import ExampleLoader
+from core.explanation_generator import ExplanationGenerator
 from ui.session_manager import SessionManager, ChatMessage
 from ui.components.chat_history import display_chat_history
 from ui.components.input_panel import get_user_input
-from validation.sql_validator import SQLValidator
 
 # Configuration
 SCHEMA_PATH = "models/schema.yaml"
 EXAMPLE_PATH = "examples/examples.json"
 
-# Initialize core components
 @st.cache_resource
 def init_components():
     schema_loader = SchemaLoader(SCHEMA_PATH)
     example_loader = ExampleLoader(EXAMPLE_PATH)
-    validator = SQLValidator()
-    return schema_loader, example_loader, validator
+    explainer = ExplanationGenerator(schema_loader)
+    return schema_loader, example_loader, explainer
 
-schema_loader, example_loader, validator = init_components()
+schema_loader, example_loader, explainer = init_components()
 session_mgr = SessionManager()
 
 def generate_sql(query: str) -> dict:
-    """Core NL2SQL generation workflow"""
     try:
-        # 1. Retrieve context
         tables = schema_loader.get_relevant_tables(query)
-        schema_context = "\n\n".join(
+        schema_context = "\n".join(
             [schema_loader.get_table_context(t) for t in tables]
         )
         examples = example_loader.get_relevant_examples(query)
         
-        # 2. Build prompt
         prompt = f"""
-        Database Schema Context:
+        Database Schema:
         {schema_context}
 
-        Similar Example Queries:
+        Similar Examples:
         {format_examples(examples)}
 
         Conversation History:
@@ -45,93 +41,71 @@ def generate_sql(query: str) -> dict:
 
         User Query: {query}
 
-        Generate Snowflake SQL following these rules:
-        1. Use ANSI-standard SQL
-        2. Include explicit JOIN conditions
-        3. Consider these indexes: {get_index_hints(tables)}
-        4. Add brief performance comments
+        Generate optimized Snowflake SQL:
         """
         
-        # 3. Generate SQL
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=500
         )
-        raw_sql = response.choices[0].message.content
-        
-        # 4. Validate and clean
-        validation = validator.validate(raw_sql)
         
         return {
-            "sql": validation["cleaned_sql"],
+            "sql": response.choices[0].message.content.strip(),
             "tables": tables,
-            "examples": examples,
-            "validation": validation
+            "error": None
         }
-        
     except Exception as e:
-        return {"error": str(e)}
+        return {"sql": None, "tables": [], "error": str(e)}
 
 def format_examples(examples: list) -> str:
-    """Format examples for prompt"""
     return "\n\n".join(
-        f"Example {i+1}:\nQuestion: {ex['question']}\nSQL: {ex['sql']}"
+        f"Example {i+1}:\nQ: {ex['question']}\nSQL: {ex['sql']}"
         for i, ex in enumerate(examples)
     )
 
-def get_index_hints(tables: list) -> str:
-    """Get index hints from schema"""
-    hints = []
-    for table in tables:
-        for hint in schema_loader.tables[table].query_hints:
-            hints.append(
-                f"{hint['index_type']} on {table}({','.join(hint['columns'])})"
-            )
-    return ", ".join(hints)
-
-# Streamlit UI
-st.title("🔍 Data Query Assistant")
-st.caption("Natural Language to SQL Interface with Context Awareness")
-
-# Chat interface
+# UI Setup
+st.title("NL2SQL Assistant")
 display_chat_history()
 
-# User input handling
-user_query = get_user_input()
-if user_query:
+# Input Handling
+query, explain_toggle, clear_clicked = get_user_input()
+
+if clear_clicked:
+    session_mgr.create_session()  # Reset chat
+
+if query:
     if not st.session_state.active_session:
         session_mgr.create_session()
     
     # Add user message
     session_mgr.add_message(ChatMessage(
-        content=user_query,
+        content=query,
         role='user'
     ))
     
-    # Generate SQL
-    with st.status("🔍 Analyzing your query..."):
-        st.write("1. Identifying relevant tables...")
-        result = generate_sql(user_query)
+    # Generate response
+    with st.status("Processing..."):
+        result = generate_sql(query)
         
-        if "error" in result:
-            st.error(f"Generation Error: {result['error']}")
+        if result["error"]:
+            st.error(f"Error: {result['error']}")
         else:
-            st.write("2. Validating SQL syntax...")
-            if not result["validation"]["is_valid"]:
-                st.warning("Validation issues found")
-                
-            st.write("3. Finalizing query...")
+            explanation = ""
+            if explain_toggle:
+                explanation = explainer.generate(
+                    result["sql"], 
+                    result["tables"]
+                )
+            
+            # Add assistant message
             session_mgr.add_message(ChatMessage(
-                content="Generated SQL Query",
+                content="Generated SQL",
                 role='assistant',
                 sql=result["sql"],
                 tables=result["tables"],
-                meta={
-                    "examples": result["examples"],
-                    "validation": result["validation"]
-                }
+                explanation=explanation
             ))
     
     st.rerun()

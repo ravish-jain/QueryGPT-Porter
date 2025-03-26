@@ -1,14 +1,20 @@
 import streamlit as st
 
 def get_user_input():
-    """Capture user input with query suggestions"""
-    col1, col2 = st.columns([6, 1])
+    """Returns tuple: (query, explain_toggle, clear_clicked)"""
+    col1, col2, col3 = st.columns([5, 1, 1])
     
     with col1:
-        query = st.chat_input("Enter your data question...")
+        query = st.chat_input("Ask your data question...")
     
     with col2:
-        if st.button("🧹 Clear Chat"):
-            st.session_state.active_session = None
+        explain = st.checkbox(
+            "Explain",
+            help="Generate query explanation",
+            key="explain_toggle"
+        )
+    
+    with col3:
+        clear = st.button("🧹", help="Clear chat history")
             
-    return query
+    return query, explain, clear
