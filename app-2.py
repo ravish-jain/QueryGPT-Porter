@@ -52,7 +52,7 @@ fine_tuned_model_id = "ft:gpt-3.5-turbo-1106:porter:querygpt-2:BE9QPw3E"
 
 # Streamlit UI setup
 st.title("Porter QueryGPT")
-st.write("Enter your business query below to generate the corresponding SQL query.")
+st.write("Enter your business query below to generate the corresponding SQL query. Currently this GPT answers questions related to ONBOARDING only!!")
 
 # Text input for user query
 user_query = st.text_input("Your Query: Keep it concise and clear.")
