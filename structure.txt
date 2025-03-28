@@ -1,6 +1,7 @@
 porter_querygpt/
 ├── core/
 │   ├── __init__.py
+│   ├── explanation_generator.py
 │   ├── yaml_schema_parser.py
 │   └── few_shot_examples_loader.py
 ├── configs/
@@ -12,5 +13,9 @@ porter_querygpt/
 └── components/
     ├── chat_history.py
     ├── input_panel.py
-    └── debug_panel.py
-└── temp/ # For WIP modules
+├── models/
+│   └── schema.yaml
+├── examples/
+│   └── examples.json
+├── requirements.txt
+└── app.py
