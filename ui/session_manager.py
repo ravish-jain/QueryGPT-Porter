@@ -5,7 +5,7 @@ import streamlit as st
 class ChatMessage:
     def __init__(self, content: str, role: str, 
                  sql: Optional[str] = None, 
-                 tables: List[str] = None,
+                 tables: Optional[List[str]] = None,
                  explanation: Optional[str] = None):
         self.timestamp = datetime.now()
         self.content = content

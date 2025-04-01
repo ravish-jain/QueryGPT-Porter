@@ -1,8 +1,10 @@
 from typing import Dict, List, Optional
 import yaml
-from pydantic import BaseModel
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+import os
+from pydantic import BaseModel, SecretStr
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+import streamlit as st
 
 class ColumnTest(BaseModel):
     test_type: str
@@ -104,9 +106,17 @@ class SchemaLoader:
                 "columns": list(table.columns.keys())
             })
         
+        # Get API key from environment or use a fallback for development
+        if "OPENAI_API_KEY" in os.environ:
+            api_key = os.environ["OPENAI_API_KEY"]
+        elif st.secrets and "openai" in st.secrets and "OPENAI_API_KEY" in st.secrets["openai"]:
+            api_key = st.secrets["openai"]["OPENAI_API_KEY"]
+        else:
+            api_key = "demo-key"
+            
         return FAISS.from_texts(
             texts,
-            OpenAIEmbeddings(),
+            OpenAIEmbeddings(api_key=SecretStr(api_key)),
             metadatas=metadatas
         )
     

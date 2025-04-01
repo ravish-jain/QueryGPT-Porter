@@ -1,5 +1,6 @@
 import openai
 from typing import List
+import streamlit as st
 
 class ExplanationGenerator:
     def __init__(self, schema_loader):
@@ -27,14 +28,17 @@ class ExplanationGenerator:
             - Business purpose
             """
             
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 max_tokens=250
             )
             
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if content is None:
+                return "🚫 Explanation unavailable: Empty response"
+            return content
             
         except Exception as e:
             return f"🚫 Explanation unavailable: {str(e)}"
