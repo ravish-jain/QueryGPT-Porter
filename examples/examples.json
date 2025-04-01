@@ -42,6 +42,217 @@
             "tables": ["PARTNER_ONBOARDING_LEAD_CREATION", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
             "difficulty": "advanced",
             "description": "This query calculates daily metrics for the lead-to-driver onboarding process, including lead conversion rates, driver creation time (TAT), and percentiles, while analyzing the efficiency and speed of converting leads into drivers based on various criteria like registration fee payment and document readiness."
+        },
+        {
+            "question": "Retrieve the count of submitted documents for each document type",
+            "sql": "SELECT DOCUMENT_NAME, COUNT(DOC_COUNT) AS DOCUMENT_SUBMITTED_COUNT FROM mart.partner_onboarding_document_approval WHERE DOC_STATUS_ID IS NOT NULL GROUP BY DOCUMENT_NAME ORDER BY DOCUMENT_SUBMITTED_COUNT DESC;",
+            "tables": ["partner_onboarding_document_approval"],
+            "difficulty": "basic",
+            "description": "Returns the count of submitted documents for each document type, ordered by submission count."
+        },
+        {
+            "question": "Retrieve the count of documents group by document status",
+            "sql": "SELECT DOC_STATUS, COUNT(DOC_COUNT) AS DOCUMENT_COUNT FROM mart.partner_onboarding_document_approval WHERE DOC_STATUS IS NOT NULL GROUP BY DOC_STATUS ORDER BY DOCUMENT_COUNT DESC;",
+            "tables": ["partner_onboarding_document_approval"],
+            "difficulty": "basic",
+            "description": "Counts the number of documents in each status (e.g., Accepted, Rejected) and orders them by the highest count."
+        },
+        {
+            "question": "Retrieve the count of document approvals by approval type",
+            "sql": "SELECT CASE WHEN ACTUAL_ACTIONED_BY IS NULL THEN 'Null' WHEN ACTUAL_ACTIONED_BY = 'auto' THEN 'Auto' WHEN ACTUAL_ACTIONED_BY = 'manual' THEN 'Manual' ELSE 'Other' END AS DOCUMENT_APPROVAL_TYPE, COUNT(DOC_COUNT) AS DOCUMENT_COUNT FROM mart.partner_onboarding_document_approval GROUP BY DOCUMENT_APPROVAL_TYPE ORDER BY DOCUMENT_COUNT DESC;",
+            "tables": ["partner_onboarding_document_approval"],
+            "difficulty": "intermediate",
+            "description": "Returns the count of documents approved under different approval types (Auto, Manual, Null, Other), ordered by the highest count."
+        },
+        {
+            "question": "Retrieve the approval rate of each document type",
+            "sql": "SELECT DOCUMENT_NAME, COUNT(CASE WHEN DOC_STATUS = 'Accepted' THEN 1 END) AS APPROVED_DOCUMENTS, COUNT(DOC_COUNT) AS TOTAL_DOCUMENTS, (COUNT(CASE WHEN DOC_STATUS = 'Accepted' THEN 1 END) * 100.0) / COUNT(DOC_COUNT) AS APPROVAL_RATE FROM mart.partner_onboarding_document_approval GROUP BY DOCUMENT_NAME ORDER BY APPROVAL_RATE DESC;",
+            "tables": ["partner_onboarding_document_approval"],
+            "difficulty": "intermediate",
+            "description": "Calculates the approval rate for each document type by comparing the number of approved documents to the total submitted. Orders results by highest approval rate."
+        },
+        {
+            "question": "Retrieve the rejection rate group by reason of rejection",
+            "sql": "SELECT DOC_STATUS_REASON, COUNT(DOC_COUNT) AS REJECTED_DOCUMENTS, (COUNT(DOC_COUNT) * 100.0) / (SELECT COUNT(*) FROM mart.partner_onboarding_document_approval WHERE DOC_STATUS = 'Rejected') AS REJECTION_RATE FROM mart.partner_onboarding_document_approval WHERE DOC_STATUS = 'Rejected' GROUP BY DOC_STATUS_REASON ORDER BY REJECTION_RATE DESC;",
+            "tables": ["partner_onboarding_document_approval"],
+            "difficulty": "intermediate",
+            "description": "Returns the rejection rate of documents categorized by rejection reason, ordered by highest rejection rate."
+        },
+        {
+            "question": "Count distinct drivers added per day",
+            "sql": "SELECT DATE_TRUNC(day, driver_created_at_ist) AS date, COUNT(DISTINCT driver_id) AS drivers_added FROM mart.partner_onboarding_driver_creation GROUP BY 1;",
+            "tables": ["partner_onboarding_driver_creation"],
+            "difficulty": "basic",
+            "description": "Counts the distinct number of drivers added per day based on their creation date."
+        },
+        {
+            "question": "Calculate daily activated conversion rate (CVR) for driver creation to active driver for drivers created between '2025-01-01' and '2025-02-01'",
+            "sql": "WITH drivers AS (SELECT * FROM mart.partner_onboarding_driver_creation WHERE driver_created_at_ist BETWEEN '2025-01-01' AND '2025-02-01'), leads AS (SELECT pl.* FROM mart.partner_onboarding_lead_creation pl JOIN drivers ON pl.driver_id = drivers.driver_id WHERE pl.termination_ts IS NULL), final AS (SELECT d.driver_id, d.driver_created_at_ist, d.category_segment, l.reg_fee_paid, CASE WHEN DATEDIFF(day, d.driver_created_at_ist, d.FIRST_SPOT_ORDER_COMPLETED_TS_IST) <= 7 THEN TRUE ELSE FALSE END AS active_cvr_flag FROM drivers d LEFT JOIN leads l ON l.driver_id = d.driver_id) SELECT DATE_TRUNC(day, driver_created_at_ist) AS date, COUNT(DISTINCT driver_id) AS drivers_added, COUNT(DISTINCT CASE WHEN active_cvr_flag THEN driver_id END) AS drivers_activated_cvr, drivers_activated_cvr/drivers_added AS activated_cvr_criteria FROM final GROUP BY 1;",
+            "tables": ["partner_onboarding_driver_creation", "partner_onboarding_lead_creation"],
+            "difficulty": "advanced",
+            "description": "Calculates daily number of drivers added, activated within 7 days, and computes activated CVR."
+        },
+        {
+            "question": "Calculate average activation time (TAT) for first order for drivers created between '2025-01-01' and '2025-02-01'",
+            "sql": "WITH drivers AS (SELECT * FROM mart.partner_onboarding_driver_creation WHERE driver_created_at_ist BETWEEN '2025-01-01' AND '2025-02-01'), leads AS (SELECT pl.* FROM mart.partner_onboarding_lead_creation pl JOIN drivers ON pl.driver_id = drivers.driver_id WHERE pl.termination_ts IS NULL), final AS (SELECT d.driver_id, d.driver_created_at_ist, d.category_segment, CASE WHEN d.category_segment = '2W' THEN d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST ELSE l.REG_FEE_PAID_AT_IST END AS ready_to_order_at_ist, d.FIRST_SPOT_ORDER_COMPLETED_TS_IST AS first_order_done_at_ist, CASE WHEN DATEDIFF(day, ready_to_order_at_ist, d.FIRST_SPOT_ORDER_COMPLETED_TS_IST) <= 7 THEN TRUE ELSE FALSE END AS ready_cvr_flag, CASE WHEN ready_cvr_flag THEN DATEDIFF(day, ready_to_order_at_ist, d.FIRST_SPOT_ORDER_COMPLETED_TS_IST) END AS activation_tat FROM drivers d LEFT JOIN leads l ON l.driver_id = d.driver_id) SELECT DATE_TRUNC(day, driver_created_at_ist) AS date, AVG(activation_tat) AS avg_tat FROM final GROUP BY 1 ORDER BY 1;",
+            "tables": ["partner_onboarding_driver_creation", "partner_onboarding_lead_creation"],
+            "difficulty": "advanced",
+            "description": "Computes average activation time (TAT) for first order, considering drivers ready to order."
+        },
+        {
+            "question": "Count activated drivers per vehicle category",
+            "sql": "SELECT VEHICLE_CATEGORY, COUNT(DISTINCT DRIVER_ID) AS ACTIVATED_DRIVERS_COUNT FROM mart.partner_onboarding_driver_creation WHERE ACTIVE_STATUS = 1 GROUP BY VEHICLE_CATEGORY ORDER BY ACTIVATED_DRIVERS_COUNT DESC;",
+            "tables": ["partner_onboarding_driver_creation"],
+            "difficulty": "basic",
+            "description": "Counts distinct activated drivers (ACTIVE_STATUS = 1) per vehicle category."
+        },
+        {
+            "question": "List drivers who completed their first dummy order",
+            "sql": "SELECT DRIVER_ID, FIRST_DUMMY_ORDER_COMPLETED_TS_IST, VEHICLE_CATEGORY FROM mart.partner_onboarding_driver_creation WHERE FIRST_DUMMY_ORDER_COMPLETED_TS_IST IS NOT NULL ORDER BY FIRST_DUMMY_ORDER_COMPLETED_TS_IST;",
+            "tables": ["partner_onboarding_driver_creation"],
+            "difficulty": "basic",
+            "description": "Retrieves drivers who completed their first dummy order along with order timestamps and vehicle category."
+        },
+        {
+            "question": "Find average earnings in first 30 days by vehicle type",
+            "sql": "SELECT vehicle_type, AVG(first_30d_earnings) FROM mart.partner_onboarding_driver_creation GROUP BY vehicle_type;",
+            "tables": ["partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "Returns vehicle type and average driver earnings within first 30 days of activation."
+        },
+        {
+            "question": "Retrieve drivers with more than 30 orders in first 30 days",
+            "sql": "SELECT driver_id FROM mart.partner_onboarding_driver_creation WHERE first_30d_orders_done > 30;",
+            "tables": ["partner_onboarding_driver_creation"],
+            "difficulty": "basic",
+            "description": "Fetches drivers who completed more than 30 orders in their first 30 days."
+        },
+        {
+            "question": "Show active leads count excluding terminated ones",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id FROM mart.partner_onboarding_lead_creation pl WHERE pl.termination_ts IS NULL) SELECT COUNT(DISTINCT partner_onboarding_lead_id) AS active_leads FROM leads;",
+            "tables": ["partner_onboarding_lead_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts active leads by excluding terminated ones"
+        },
+        {
+            "question": "Show count of active leads that have added a vehicle",
+            "sql":"WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL) SELECT COUNT(DISTINCT partner_onboarding_lead_id) AS leads_with_vehicle FROM leads WHERE onboarding_vehicle_id IS NOT NULL;",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts leads created that have associated vehicles"
+        },
+        {
+            "question": "Show count of drivers created from leads who completed vehicle onboarding",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id, pl.driver_id FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL AND pv.onboarding_vehicle_id IS NOT NULL), drivers AS (SELECT d.driver_id FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id) SELECT COUNT(DISTINCT driver_id) AS drivers_created FROM drivers;",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts drivers created from leads who completed vehicle onboarding using CTE and JOINs"
+        },
+        {
+            "question": "Show count of drivers ready to take orders based on vehicle type criteria",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id, pl.driver_id, pv.level0_mapping FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL AND pv.onboarding_vehicle_id IS NOT NULL), drivers AS (SELECT d.driver_id, d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST, d.REG_FEE_PAID_AT_IST FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id) SELECT COUNT(DISTINCT d.driver_id) AS ready_to_order FROM drivers d JOIN leads l ON d.driver_id = l.driver_id WHERE (l.level0_mapping = '2W' AND d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST IS NOT NULL) OR (l.level0_mapping <> '2W' AND d.REG_FEE_PAID_AT_IST IS NOT NULL);",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "This query counts the number of drivers who are ready to take orders, either by completing a dummy order (for 2-wheelers) or paying the registration fee (for other vehicle categories) using CTEs and JOINs"
+        },
+        {
+            "question": "Show metrics like conversion rates, driver creation time(TAT) for lead-to-driver onboarding process",
+            "sql": "WITH leads AS ( SELECT mart.PARTNER_ONBOARDING_LEAD_CREATION.* EXCLUDE (level0_mapping, vehicle_category, vehicle_mapping, vehicle_type) , mart.partner_onboarding_vehicle_creation.vehicle_category , mart.partner_onboarding_vehicle_creation.level0_mapping , mart.partner_onboarding_vehicle_creation.vehicle_mapping , mart.partner_onboarding_vehicle_creation.vehicle_type , mart.partner_onboarding_vehicle_creation.onboarding_vehicle_id FROM mart.PARTNER_ONBOARDING_LEAD_CREATION JOIN mart.partner_onboarding_vehicle_creation ON mart.PARTNER_ONBOARDING_LEAD_CREATION.partner_onboarding_lead_id = mart.partner_onboarding_vehicle_creation.lead_id ) , drivers AS ( SELECT d.* FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id ) , final AS ( SELECT l.owner_id , l.owner_created_at_ist , l.onboarding_vehicle_id , l.vehicle_created_at_ist , l.level0_mapping , l.vehicle_category , l.vehicle_mapping , l.vehicle_type , l.city_name , l.tier , l.partner_onboarding_lead_id AS onboarding_lead_id , l.lead_created_at_ist , l.owner_driver , l.reg_fee_payment_attempted , l.reg_fee_paid , l.reg_fee_paid_at_ist , CASE WHEN l.VEHICLE_CATEGORY = '2W' THEN l.REG_FEE_PAID_AT_IST WHEN l.VEHICLE_CATEGORY <> '2W' THEN l.LEAD_CREATED_AT_IST END AS ready_to_verify_at_ist , d.driver_created_at_ist , CASE WHEN l.VEHICLE_CATEGORY = '2W' AND d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST IS NOT NULL THEN TRUE WHEN l.VEHICLE_CATEGORY <> '2W' AND l.reg_fee_paid = TRUE THEN TRUE ELSE FALSE END AS ready_to_order , CASE WHEN l.VEHICLE_CATEGORY = '2W' THEN d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST ELSE l.REG_FEE_PAID_AT_IST END AS ready_to_order_at_ist , CASE WHEN DATEDIFF(day, l.lead_created_at_ist, d.driver_created_at_ist) <= 7 THEN TRUE ELSE FALSE END AS driver_cvr_flag , DATEDIFF(hour, l.lead_created_at_ist, l.REG_FEE_PAID_AT_IST) AS reg_fee_payment_tat , DATEDIFF(day, l.lead_created_at_ist, d.driver_created_at_ist) AS driver_creation_tat FROM leads l LEFT JOIN drivers d ON l.driver_id = d.driver_id ) SELECT DATE_TRUNC(day, lead_created_at_ist) AS date , COUNT(DISTINCT onboarding_lead_id) AS leads_added , COUNT(DISTINCT CASE WHEN driver_created_at_ist IS NOT NULL THEN onboarding_lead_id END) AS drivers_added , COUNT(DISTINCT CASE WHEN driver_cvr_flag THEN onboarding_lead_id END) AS drivers_added_cvr , drivers_added/leads_added AS drivers_cvr , drivers_added_cvr/leads_added AS drivers_cvr_criteria , AVG(driver_creation_tat) AS avg_tat , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY driver_creation_tat) AS p50_tat , PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY driver_creation_tat) AS p75_tat FROM final GROUP BY 1 ORDER BY 1;",
+            "tables": ["PARTNER_ONBOARDING_LEAD_CREATION", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "advanced",
+            "description": "This query calculates daily metrics for the lead-to-driver onboarding process, including lead conversion rates, driver creation time (TAT), and percentiles, while analyzing the efficiency and speed of converting leads into drivers based on various criteria like registration fee payment and document readiness."
+        },
+        {
+            "question": "Count distinct owners onboarded per month",
+            "sql": "SELECT DATE_TRUNC(month, owner_created_at_ist) AS date, COUNT(DISTINCT owner_id) AS owners FROM mart.partner_onboarding_owner_creation GROUP BY 1;",
+            "tables": ["partner_onboarding_owner_creation"],
+            "difficulty": "basic",
+            "description": "Counts the distinct number of owners onboarded per month."
+        },
+        {
+            "question": "Count owners who onboarded vehicles categorized by single or multiple vehicle types",
+            "sql": "WITH owners AS (SELECT * FROM mart.PARTNER_ONBOARDING_OWNER_CREATION), vehicles AS (SELECT pv.* FROM mart.partner_onboarding_vehicle_creation pv JOIN owners o ON pv.owner_id = o.owner_id QUALIFY ROW_NUMBER() OVER(PARTITION BY pv.lead_id ORDER BY pv.vehicle_created_at_ist DESC) = 1), final AS (SELECT o.owner_id, o.owner_created_at_ist, v.onboarding_vehicle_id, v.vehicle_category FROM owners o LEFT JOIN vehicles v ON o.owner_id = v.owner_id), owner_vehicles AS (SELECT DATE_TRUNC(day, owner_created_at_ist) AS date, owner_id, CASE WHEN COUNT(DISTINCT VEHICLE_CATEGORY) > 1 THEN 'Multiple Vehicle Types' ELSE 'One Vehicle Type' END AS vehicle_types_added, CASE WHEN COUNT(DISTINCT onboarding_vehicle_id) > 1 THEN 'Multiple Vehicles' ELSE 'Single Vehicle' END AS vehicles_added FROM final WHERE onboarding_vehicle_id IS NOT NULL GROUP BY 1,2) SELECT date, vehicles_added, COUNT(DISTINCT owner_id) AS vehicles FROM owner_vehicles GROUP BY 1,2;",
+            "tables": ["partner_onboarding_owner_creation", "partner_onboarding_vehicle_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts owners who onboarded vehicles, categorizing them by single or multiple vehicle types."
+        },
+        {
+            "question": "Count owners by number of vehicles added, categorized as 1, 2-10, or 10+",
+            "sql": "WITH owners AS (SELECT * FROM mart.PARTNER_ONBOARDING_OWNER_CREATION), vehicles AS (SELECT pv.* FROM mart.partner_onboarding_vehicle_creation pv), final AS (SELECT o.owner_id, o.owner_created_at_ist, v.onboarding_vehicle_id FROM owners o LEFT JOIN vehicles v ON o.owner_id = v.owner_id), owner_vehicles AS (SELECT DATE_TRUNC(day, owner_created_at_ist) AS date, owner_id, COUNT(DISTINCT onboarding_vehicle_id) AS vehicles_added FROM final WHERE onboarding_vehicle_id IS NOT NULL GROUP BY 1,2) SELECT date, CASE WHEN vehicles_added = 1 THEN '1' WHEN vehicles_added BETWEEN 2 AND 10 THEN '2-10' WHEN vehicles_added > 10 THEN '10+' END AS vehicles_added, COUNT(DISTINCT owner_id) AS vehicles FROM owner_vehicles GROUP BY 1,2 ORDER BY 1 DESC,2;",
+            "tables": ["partner_onboarding_owner_creation", "partner_onboarding_vehicle_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts owners by the number of vehicles they added, categorizing them into 1, 2-10, or more than 10 vehicles."
+        },
+        {
+            "question": "Calculate daily owners to vehicle conversion rates (CVR)",
+            "sql": "WITH owners AS (SELECT * FROM mart.PARTNER_ONBOARDING_OWNER_CREATION), vehicles AS (SELECT pv.* FROM mart.partner_onboarding_vehicle_creation pv), final AS (SELECT o.supply_lead_id, o.supply_created_at_ist, o.owner_id, o.owner_created_at_ist, v.onboarding_vehicle_id, v.vehicle_created_at_ist, v.level0_mapping, v.vehicle_category, v.vehicle_type, v.city_name, v.tier, CASE WHEN DATEDIFF(day, o.owner_created_at_ist, v.vehicle_created_at_ist) <= 7 THEN TRUE ELSE FALSE END AS vehicle_cvr_flag FROM owners o LEFT JOIN vehicles v ON o.owner_id = v.owner_id) SELECT DATE_TRUNC(day, owner_created_at_ist) AS date, COUNT(DISTINCT owner_id) AS owners, COUNT(DISTINCT CASE WHEN vehicle_created_at_ist IS NOT NULL THEN owner_id END) AS vehicles, COUNT(DISTINCT CASE WHEN vehicle_cvr_flag THEN owner_id END) AS vehicles_cvr, DIV0(vehicles, owners) AS owner_to_vehicle_cvr, DIV0(vehicles_cvr, owners) AS owner_to_vehicle_cvr_criteria FROM final WHERE 1=1 GROUP BY 1 ORDER BY 1 DESC;",
+            "tables": ["partner_onboarding_owner_creation", "partner_onboarding_vehicle_creation"],
+            "difficulty": "advanced",
+            "description": "Calculates daily count of owners onboarded, vehicle additions, and conversion rates."
+        },
+        {
+            "question": "Identify reasons for supply leads not converting to owners",
+            "sql": "SELECT supply_lead_id, mobile, supply_created_at_ist, CASE WHEN owner_id IS NULL THEN 'No Owner Created' WHEN aadhar_uploaded = FALSE THEN 'Missing Aadhar' WHEN pan_uploaded = FALSE THEN 'Missing PAN' WHEN selfie_uploaded = FALSE THEN 'Missing Selfie' ELSE 'Other Issues' END AS non_conversion_reason FROM mart.partner_onboarding_owner_creation WHERE owner_id IS NULL;",
+            "tables": ["partner_onboarding_owner_creation"],
+            "difficulty": "basic",
+            "description": "Retrieves supply leads with no corresponding owner and categorizes reasons for non-conversion."
+        },
+        {
+            "question": "Count distinct vehicles registered",
+            "sql": "SELECT COUNT(DISTINCT onboarding_vehicle_id) AS vehicles_added FROM mart.partner_onboarding_vehicle_creation;",
+            "tables": ["partner_onboarding_vehicle_creation"],
+            "difficulty": "basic",
+            "description": "This query measures how many vehicles have been registered."
+        },
+        {
+            "question": "Count vehicles with an associated lead creation record",
+            "sql": "SELECT COUNT(DISTINCT pv.onboarding_vehicle_id) AS vehicles_with_leads FROM mart.partner_onboarding_vehicle_creation pv JOIN mart.partner_onboarding_lead_creation pl ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL;",
+            "tables": ["partner_onboarding_vehicle_creation", "partner_onboarding_lead_creation"],
+            "difficulty": "intermediate",
+            "description": "This query counts how many vehicles have an associated lead creation record."
+        },
+        {
+            "question": "Count vehicles with an associated driver",
+            "sql": "SELECT COUNT(DISTINCT pd.driver_id) AS drivers_created FROM mart.partner_onboarding_vehicle_creation pv JOIN mart.partner_onboarding_lead_creation pl ON pl.partner_onboarding_lead_id = pv.lead_id JOIN mart.partner_onboarding_driver_creation pd ON pl.driver_id = pd.driver_id;",
+            "tables": ["partner_onboarding_vehicle_creation", "partner_onboarding_lead_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "This query tracks how many vehicles have an associated driver."
+        },
+        {
+            "question": "Count monthly vehicles added and owners by level0_mapping",
+            "sql": "SELECT DATE_TRUNC(month, vehicle_created_at_ist) AS date, level0_mapping, COUNT(DISTINCT onboarding_vehicle_id) AS vehicles_added, COUNT(DISTINCT owner_id) AS owners FROM prod_eldoria.mart.partner_onboarding_vehicle_creation GROUP BY 1,2 ORDER BY 3;",
+            "tables": ["partner_onboarding_vehicle_creation"],
+            "difficulty": "intermediate",
+            "description": "Retrieves the monthly count of unique vehicles added and unique owners, grouped by level0_mapping (vehicle category)."
+        },
+        {
+            "question": "Count total vehicles onboarded per city",
+            "sql": "SELECT city_name, COUNT(onboarding_vehicle_id) AS total_vehicles_onboarded FROM prod_eldoria.mart.partner_onboarding_vehicle_creation GROUP BY city_name ORDER BY total_vehicles_onboarded DESC;",
+            "tables": ["partner_onboarding_vehicle_creation"],
+            "difficulty": "basic",
+            "description": "Retrieves the total number of vehicles onboarded per city, ranking cities in descending order."
+        },
+        {
+            "question": "Calculate daily vehicle-to-lead conversion rate",
+            "sql": "WITH vehicles AS (SELECT partner_onboarding_vehicle_creation.* EXCLUDE supply_created_at_ist, po.supply_created_at_ist, po.supply_lead_id FROM mart.partner_onboarding_vehicle_creation JOIN mart.PARTNER_ONBOARDING_OWNER_CREATION po ON partner_onboarding_vehicle_creation.owner_id = po.owner_id QUALIFY ROW_NUMBER() OVER(PARTITION BY partner_onboarding_vehicle_creation.lead_id ORDER BY partner_onboarding_vehicle_creation.vehicle_created_at_ist DESC) = 1), leads AS (SELECT l.* FROM mart.PARTNER_ONBOARDING_LEAD_CREATION l JOIN vehicles v ON l.partner_onboarding_lead_id = v.lead_id WHERE l.termination_ts IS NULL QUALIFY ROW_NUMBER() OVER(PARTITION BY l.owner_id ORDER BY l.LEAD_CREATED_AT_IST) = 1), final AS (SELECT v.supply_lead_id, v.supply_created_at_ist, v.owner_id, v.owner_created_at_ist, v.onboarding_vehicle_id, v.vehicle_created_at_ist, v.level0_mapping, v.vehicle_category, v.vehicle_mapping, v.vehicle_type, v.city_name, v.tier, l.partner_onboarding_lead_id AS onboarding_lead_id, l.lead_created_at_ist, l.owner_driver, CASE WHEN DATEDIFF(day, v.vehicle_created_at_ist, l.lead_created_at_ist) <= 7 THEN TRUE ELSE FALSE END AS lead_cvr_flag FROM vehicles v LEFT JOIN leads l ON v.lead_id = l.partner_onboarding_lead_id) SELECT DATE_TRUNC(day, vehicle_created_at_ist) AS date, COUNT(DISTINCT onboarding_vehicle_id) AS vehicles_added, COUNT(DISTINCT onboarding_lead_id) AS leads_added, COUNT(DISTINCT CASE WHEN lead_cvr_flag THEN onboarding_lead_id END) AS leads_added_cvr, leads_added/vehicles_added AS leads_cvr, leads_added_cvr/vehicles_added AS leads_cvr_criteria FROM final GROUP BY 1 ORDER BY 1;",
+            "tables": ["partner_onboarding_vehicle_creation", "partner_onboarding_lead_creation"],
+            "difficulty": "advanced",
+            "description": "Calculates the daily vehicle-to-lead conversion rate, including the percentage of leads created within 7 days of vehicle onboarding."
+        },
+        {
+            "question": "Count daily vehicles added for 2W category",
+            "sql": "SELECT DATE_TRUNC(day, vehicle_created_at_ist) AS date, LOWER(body_type) AS body_type, COUNT(DISTINCT onboarding_vehicle_id) AS vehicles_added, COUNT(DISTINCT owner_id) AS owners FROM mart.partner_onboarding_vehicle_creation WHERE level0_mapping = '2W' GROUP BY 1,2;",
+            "tables": ["partner_onboarding_vehicle_creation"],
+            "difficulty": "basic",
+            "description": "Finds the daily count of vehicles added and unique owners for 2W (two-wheelers), grouped by body type."
+        },
+        {
+            "question": "Calculate average driver creation TAT",
+            "sql": "WITH vehicles AS (SELECT partner_onboarding_vehicle_creation.* EXCLUDE supply_created_at_ist, po.supply_created_at_ist, po.supply_lead_id FROM mart.partner_onboarding_vehicle_creation JOIN mart.PARTNER_ONBOARDING_OWNER_CREATION po ON partner_onboarding_vehicle_creation.owner_id = po.owner_id QUALIFY ROW_NUMBER() OVER(PARTITION BY partner_onboarding_vehicle_creation.lead_id ORDER BY partner_onboarding_vehicle_creation.vehicle_created_at_ist DESC) = 1), leads AS (SELECT l.* FROM mart.PARTNER_ONBOARDING_LEAD_CREATION l JOIN vehicles v ON l.partner_onboarding_lead_id = v.lead_id WHERE l.termination_ts IS NULL QUALIFY ROW_NUMBER() OVER(PARTITION BY l.owner_id ORDER BY l.LEAD_CREATED_AT_IST) = 1), drivers AS (SELECT d.* FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id), final AS (SELECT v.supply_lead_id, v.supply_created_at_ist, v.owner_id, v.owner_created_at_ist, v.onboarding_vehicle_id, v.vehicle_created_at_ist, v.level0_mapping, v.vehicle_category, v.vehicle_mapping, v.vehicle_type, v.city_name, v.tier, l.partner_onboarding_lead_id AS onboarding_lead_id, l.lead_created_at_ist, l.owner_driver, d.driver_created_at_ist, CASE WHEN DATEDIFF(day, v.vehicle_created_at_ist, d.driver_created_at_ist) <= 7 THEN TRUE ELSE FALSE END AS driver_cvr_flag, CASE WHEN driver_cvr_flag THEN DATEDIFF(hour, v.vehicle_created_at_ist, d.driver_created_at_ist) END AS driver_creation_tat FROM vehicles v LEFT JOIN leads l ON v.lead_id = l.partner_onboarding_lead_id LEFT JOIN drivers d ON l.driver_id = d.driver_id) SELECT DATE_TRUNC(day, vehicle_created_at_ist)::DATE AS date, AVG(driver_creation_tat) AS avg_tat, PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY driver_creation_tat) AS p50_tat, PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY driver_creation_tat) AS p75_tat FROM final GROUP BY 1 ORDER BY 1;",
+            "tables": ["partner_onboarding_vehicle_creation", "partner_onboarding_lead_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "advanced",
+            "description": "Calculates the average, median (P50), and 75th percentile (P75) turnaround time in hours for drivers created within 7 days of vehicle creation."
         }
     ]
-  }  
+}
+    

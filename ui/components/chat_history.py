@@ -32,8 +32,7 @@ def render_chat_message(message: dict):
                 st.caption("✅ Explanation generated with query")
 
 def display_chat_history():
-    if ('active_session' not in st.session_state or 
-        st.session_state.active_session is None):
+    if ('active_session' not in st.session_state or st.session_state.active_session is None):
         return
         
     messages = st.session_state.sessions[

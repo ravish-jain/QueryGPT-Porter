@@ -44,7 +44,7 @@ class SessionManager:
         })
         
         # Keep last 2 interactions (4 messages max)
-        session['messages'] = session['messages'][-2:]
+        session['messages'] = session['messages'][-4:]
     
     def get_recent_context(self) -> str:
         if not st.session_state.active_session:
@@ -56,5 +56,5 @@ class SessionManager:
         
         return "\n".join(
             f"{msg['role']}: {msg['content']}" 
-            for msg in messages[-2:]
+            for msg in messages[-4:]
         )
