@@ -12,8 +12,27 @@ import time
 import warnings
 import uuid
 import json
+import logging
 from datetime import datetime
 from langsmith import Client
+
+# Set up logging
+log_file = "logs/app.log"
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # Also log to console
+    ]
+)
+
+# Create a logger
+logger = logging.getLogger("QueryGPT")
+logger.info("Application started")
 
 # Suppress LangSmith API Key warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="langsmith")
@@ -64,7 +83,7 @@ if (st.secrets and "langsmith" in st.secrets and
             run_id=test_run_id,
             project_name=langsmith_project,
             error=None,
-            start_time=datetime.utcnow().isoformat(),
+            start_time=datetime.now(),
             tags=["test"]
         )
         
@@ -73,7 +92,7 @@ if (st.secrets and "langsmith" in st.secrets and
         client.update_run(
             run_id=test_run_id,
             outputs={"result": "success"},
-            end_time=datetime.utcnow().isoformat()
+            end_time=datetime.now()
         )
         st.toast(f"LangSmith connected (Project: {langsmith_project[:15]}...)", icon="✅")
     except Exception as e:
@@ -127,7 +146,9 @@ session_mgr = SessionManager()
 def generate_sql(query: str) -> dict:
     # Generate a unique run ID for LangSmith tracking
     run_id = str(uuid.uuid4()) if use_langsmith else None
-    start_time = datetime.utcnow().isoformat()
+    start_time = datetime.now()
+    
+    logger.info(f"Starting SQL generation for query: {query[:50]}...")
     
     try:
         # Create a direct run in LangSmith if enabled
@@ -142,8 +163,9 @@ def generate_sql(query: str) -> dict:
                     start_time=start_time,
                     tags=["sql-generation"]
                 )
+                logger.info(f"LangSmith run created with ID: {run_id}")
             except Exception as e:
-                print(f"LangSmith run creation error: {str(e)}")
+                logger.error(f"LangSmith run creation error: {str(e)}")
                 # Continue with local processing despite the error
         
         tables = schema_loader.get_relevant_tables(query)
@@ -190,33 +212,73 @@ def generate_sql(query: str) -> dict:
         Generate optimized Snowflake SQL:
         """
         
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=500
-        )
-        token_tracker.track(response, run_id)
+        # Log the complete prompt for debugging
+        logger.debug(f"Full prompt for OpenAI API call: \n{'-'*80}\n{prompt}\n{'-'*80}")
+        logger.info(f"Making OpenAI API call with prompt length: {len(prompt)}")
         
-        # Track token usage
-        usage = None
-        if hasattr(response, "usage") and response.usage is not None:
-            usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=500
+            )
+            logger.info("OpenAI API call successful")
+            token_tracker.track(response, run_id)
+            
+            # Track token usage
+            usage = None
+            if hasattr(response, "usage") and response.usage is not None:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens
+                }
+                logger.info(f"Token usage - Prompt: {usage['prompt_tokens']}, Completion: {usage['completion_tokens']}, Total: {usage['total_tokens']}")
+            else:
+                logger.warning("No usage information available in the response")
+                
+            # Log the model response for debugging
+            if hasattr(response, 'choices') and len(response.choices) > 0 and hasattr(response.choices[0], 'message'):
+                logger.debug(f"Model response: \n{'-'*80}\n{response.choices[0].message.content}\n{'-'*80}")
+                
+        except Exception as api_err:
+            logger.error(f"OpenAI API ERROR: {str(api_err)}", exc_info=True)
+            raise  # Re-raise to be caught by the outer exception handler
 
-        content = response.choices[0].message.content
-        if content is None:
+        # Debug the raw response structure
+        logger.debug(f"Response structure: {type(response)}")
+        logger.debug(f"Has choices: {hasattr(response, 'choices')}")
+        
+        if hasattr(response, 'choices') and len(response.choices) > 0:
+            logger.debug(f"First choice: {response.choices[0]}")
+            logger.debug(f"Has message: {hasattr(response.choices[0], 'message')}")
+            
+            if hasattr(response.choices[0], 'message'):
+                logger.debug(f"Message content type: {type(response.choices[0].message.content)}")
+                logger.debug(f"Content preview: {response.choices[0].message.content[:100] if response.choices[0].message.content else 'None'}")
+        
+        try:
+            content = response.choices[0].message.content
+            logger.info(f"Extracted content length: {len(content) if content else 0}")
+        except Exception as content_err:
+            logger.error(f"Error extracting content: {str(content_err)}", exc_info=True)
+            content = None
+            
+        if content is None or content.strip() == "":
             error_msg = "Empty response from OpenAI"
+            logger.error(f"{error_msg}")
+            
             # End the run with error if LangSmith is enabled
             if use_langsmith and client is not None and run_id:
                 try:
-                    tracer = LangChainTracer(project_name=os.environ["LANGCHAIN_PROJECT"])
-                    tracer.end_run(run_id=run_id, error=error_msg)
-                except Exception:
-                    pass
+                    client.update_run(
+                        run_id=run_id,
+                        error=error_msg,
+                        end_time=datetime.now()
+                    )
+                except Exception as e:
+                    logger.error(f"Error updating LangSmith run: {str(e)}")
                     
             return {"error": error_msg, "metadata": metadata}
             
@@ -227,7 +289,7 @@ def generate_sql(query: str) -> dict:
                 client.update_run(
                     run_id=run_id,
                     outputs={"sql": content.strip()},
-                    end_time=datetime.utcnow().isoformat()
+                    end_time=datetime.now()
                 )
                 
                 # Create a success feedback
@@ -241,13 +303,23 @@ def generate_sql(query: str) -> dict:
                 print(f"LangSmith completion error: {str(e)}")
                 # Continue despite the error
                 
-        # Return the standard response
-        return {
-            "sql": content.strip(),
+        # Prepare and log the response
+        sql_content = content.strip()
+        logger.info(f"Final SQL content ({len(sql_content)} chars): {sql_content[:100]}...")
+        
+        # Log the full SQL for debugging
+        logger.debug(f"Complete SQL: \n{'-'*80}\n{sql_content}\n{'-'*80}")
+        
+        result = {
+            "sql": sql_content,
             "metadata": metadata,  # This contains the run_id
+            "tables": tables,  # Explicitly include tables
             "usage": usage,
             "error": None
         }
+        logger.info(f"Returning result with keys: {result.keys()}")
+        
+        return result
     except Exception as e:
         # Log error to LangSmith
         if use_langsmith and client is not None and run_id:
@@ -256,7 +328,7 @@ def generate_sql(query: str) -> dict:
                 client.update_run(
                     run_id=run_id,
                     error=str(e),
-                    end_time=datetime.utcnow().isoformat()
+                    end_time=datetime.now()
                 )
                 
                 # Create error feedback
@@ -266,10 +338,12 @@ def generate_sql(query: str) -> dict:
                     score=0.0,
                     comment=str(e)
                 )
+                logger.info(f"LangSmith error feedback created for run: {run_id}")
             except Exception as ex:
-                print(f"LangSmith error reporting failed: {str(ex)}")
-                
-        # Always return the error to the user
+                logger.error(f"LangSmith error reporting failed: {str(ex)}", exc_info=True)
+        
+        # Log the error and return it to the user
+        logger.error(f"SQL generation error: {str(e)}", exc_info=True)
         return {"error": str(e), "metadata": {"run_id": run_id} if run_id else {}}
 
 def format_examples(examples: list) -> str:
@@ -301,9 +375,23 @@ if query:
     # Generate response
     with st.status("🔍 Processing...") as status:
         try:
+            logger.info(f"Calling generate_sql with query: {query[:50]}...")
             result = generate_sql(query)
+            logger.info(f"Result received from generate_sql with keys: {list(result.keys())}")
+            
+            # Debug the result structure
+            if "error" in result:
+                logger.warning(f"Result has error: {result['error']}")
+            if "sql" in result:
+                sql_length = len(result.get('sql', ''))
+                logger.info(f"Result has SQL ({sql_length} chars)")
+                if sql_length == 0:
+                    logger.warning("SQL content is empty")
+            if "tables" in result:
+                logger.info(f"Result has tables: {result.get('tables', [])}")
         
-            if result["error"]:
+            if result.get("error"):
+                logger.warning(f"Displaying error to user: {result['error']}")
                 st.error(f"Error: {result['error']}")
                 if use_langsmith and client is not None and result.get("metadata", {}).get("run_id"):
                     run_id = result["metadata"]["run_id"]
@@ -320,7 +408,7 @@ if query:
                             client.update_run(
                                 run_id=run_id,
                                 error=result["error"],
-                                end_time=datetime.utcnow().isoformat()
+                                end_time=datetime.now()
                             )
                         except Exception as trace_ex:
                             print(f"LangSmith run end error: {str(trace_ex)}")
@@ -329,11 +417,21 @@ if query:
                         print(f"LangSmith failed generation feedback error: {str(e)}")
                         pass
             else:
+                logger.info(f"Successful SQL generation")
                 status.update(
                     label="✅ Query Generated",
                     state="complete", 
                     expanded=False
                 )
+                
+                # Debug SQL content
+                if "sql" in result:
+                    logger.info(f"SQL content to be displayed: {result['sql'][:100]}...")
+                    # Log whether it appears to be valid SQL
+                    if result['sql'].strip().upper().startswith(('SELECT', 'WITH')):
+                        logger.info("SQL appears to be valid (starts with SELECT or WITH)")
+                    else:
+                        logger.warning(f"SQL might not be valid: {result['sql'][:50]}...")
 
                 # Track successful generation
                 if use_langsmith and client is not None and result.get("metadata", {}).get("run_id"):
@@ -351,7 +449,7 @@ if query:
                         try:
                             client.update_run(
                                 run_id=run_id,
-                                end_time=datetime.utcnow().isoformat()
+                                end_time=datetime.now()
                             )
                         except Exception as trace_ex:
                             print(f"LangSmith run end error: {str(trace_ex)}")
@@ -367,13 +465,27 @@ if query:
                         result["tables"]
                     )
                 
-                session_mgr.add_message(ChatMessage(
+                # Debug message creation
+                logger.info(f"Creating message with:")
+                logger.info(f"- SQL: {result['sql'][:50]}...")
+                logger.info(f"- Tables: {result['tables']}")
+                logger.info(f"- Explanation: {len(explanation) if explanation else 0} chars")
+                
+                # Create and add the message
+                chat_message = ChatMessage(
                     content="Generated SQL",
                     role='assistant',
                     sql=result["sql"],
                     tables=result["tables"],
                     explanation=explanation
-                ))
+                )
+                
+                # Log message properties before adding
+                logger.debug(f"Message object created with SQL length: {len(chat_message.sql) if chat_message.sql else 0}")
+                logger.debug(f"Message object tables: {chat_message.tables}")
+                
+                session_mgr.add_message(chat_message)
+                logger.info("Message added to session")
         
         except Exception as e:
             # Generate a new run ID for error tracking if there's an exception outside of generate_sql
@@ -381,8 +493,8 @@ if query:
                 error_run_id = str(uuid.uuid4())
                 try:
                     # Create a new run directly with error information
-                    start_time = datetime.utcnow().isoformat()
-                    end_time = datetime.utcnow().isoformat()
+                    start_time = datetime.now()
+                    end_time = datetime.now()
                     
                     # Create and end the run immediately with the error
                     client.create_run(
