@@ -9,7 +9,7 @@ def get_user_input():
     
     with col2:
         explain = st.checkbox(
-            "💭 Explain",
+            "Explain💭",
             help="Generate query explanation",
             key="explain_toggle"
         )
