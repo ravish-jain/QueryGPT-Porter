@@ -157,7 +157,7 @@ class SchemaLoader:
         
         return "\n".join(context)
     
-    def get_relevant_tables(self, query: str, k: int=3) -> List[str]:
+    def get_relevant_tables(self, query: str, k: int=2) -> List[str]:
         """Retrieve relevant tables using semantic search"""
         docs = self.vector_store.similarity_search(query, k=k)
         return [doc.metadata["table_name"] for doc in docs]

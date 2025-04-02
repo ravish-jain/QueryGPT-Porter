@@ -198,6 +198,7 @@ def generate_sql(query: str) -> dict:
                 # Continue with local processing
         
         prompt = f"""
+        
         Database Schema:
         {schema_context}
 
@@ -208,8 +209,9 @@ def generate_sql(query: str) -> dict:
         {session_mgr.get_recent_context()}
 
         User Query: {query}
-
-        Generate optimized Snowflake SQL:
+        
+        Redirect non-SQL requests (e.g., general questions, data explanations) back to SQL generation.
+        Generate optimized Snowflake SQL without any explanation:
         """
         
         # Log the complete prompt for debugging
@@ -353,7 +355,30 @@ def format_examples(examples: list) -> str:
     )
 
 # UI Setup
-st.title("NL2SQL Assistant")
+col1, col2 = st.columns([1,4])
+with col1:
+    st.image("images/porter_logo.png")
+with col2:
+    st.title("Porter Query Assistant")
+
+col1, col2 = st.columns([1, 4])
+with col1:
+    st.image("images/img1.png")
+with col2:
+    st.markdown("""Welcome to the **:blue[Porter] Query Assistant**! Ask me any question to generate *SQL queries*.""")
+    st.markdown("""
+                I'm a D-Rank Query Hunter with the potential to become an S-Rank Query Hunter in the future.
+                I can only answer questions related to -
+                - **Onboarding**
+                - **Partner's Performance across L0 metrics of Earnings, Orders & Login Hours as of today looking back at last 30 days, 90 days & Lifetime period**
+                """)
+
+st.markdown("#### Instructions")
+st.markdown("""
+            - Ask a clear and concise question. Example: *"Write a query to get number of leads generated in…"*
+            - Focus on the key details - the more you specify what you exactly want the better the response.
+            - Pass on your Feedback to Us! [Link to Feedback form](https://docs.google.com/forms/d/e/1FAIpQLSeInkVGJr_HT-4Nh77BlZSAvGuicmbz-nHqHYT-km7rqm7a1Q/viewform?usp=sharing "Report it!!") """)
+
 display_chat_history()
 
 # Input Handling
