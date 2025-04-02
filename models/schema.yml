@@ -1,0 +1,1023 @@
+version: 2
+
+models:
+  - name: partner_onboarding_lead_creation
+    description: |-
+      This model aggregates data related to the onboarding process of leads by partners.
+      - Incorporates lead details, document submission statuses, registration fee payments, and refunds
+      - Tracks various documents for drivers, their upload status, and number of upload attempts
+      - Includes information on the payment and refund of registration fees
+      - Contains timestamps of all document submissions
+    config: 
+        primary_key: partner_onboarding_lead_id
+        foreign_key_relationships:
+          - source_column: owner_id
+            target_model: fact_partner_onboarding_owners
+            target_column: owner_id
+          - source_column: vehicle_id
+            target_model: dim_vehicles
+            target_column: vehicle_id
+          - source_column: PAYEE_DRIVER_ID
+            target_model: fact_drivers_registration
+            target_column: PAYEE_DRIVER_ID
+          - source_column: GEO_REGION_ID
+            target_model: dim_geo_regions
+            target_column: GEO_REGION_ID      
+    columns:
+      - name: owner_id
+        description: Foreign key to owners table (references fact_partner_onboarding_owners.owner_id)
+        data_type: number
+        tests:
+          - not_null
+          - relationships:
+              field: OWNER_ID
+              to: ref('fact_partner_onboarding_owners')
+      - name: owner_created_at_ist
+        description: Timestamp when the owner record was created, in IST
+        data_type: timestamp_ntz
+      - name: supply_created_at_ist
+        description: Timestamp when the supply record was created, in IST
+        data_type: timestamp_ntz
+      - name: owner_creation_tat_sec
+        description: Time taken in seconds between the supply created and the owner created
+        data_type: number
+      - name: partner_onboarding_lead_id
+        description:  Unique lead identifier (PK)
+        data_type: number
+        tests:
+          - not_null
+          - unique
+          - primary_key
+      - name: lead_mobile
+        description: Mobile number associated with the supply lead
+        data_type: varchar
+      - name: lead_created_at_ist
+        description: Timestamp when the lead record was created, in IST
+        data_type: timestamp_ntz
+        tests:
+          - not_null
+      - name: uuid
+        description: Universal unique ID for vehicle
+        data_type: varchar
+        tests:
+          - unique
+      - name: status
+        description: Current status of the lead (status can be 0,1,2,3)
+        data_type: number
+        meta:
+          synonyms: [ "vehicle_status", "current_state" ]
+      - name: owner_driver
+        description: Indicates if the driver is assigned as the lead owner
+        data_type: boolean
+      - name: driver_id
+        description: Foreign key to drivers registration table (references fact_drivers_registration. PAYEE_DRIVER_ID)
+        data_type: number
+        tests:
+          - relationships:
+              field: PAYEE_DRIVER_ID
+              to: ref('fact_drivers_registration')
+      - name: language
+        data_type: varchar
+        description: Language preference of the driver
+      - name: onboarding_status
+        data_type: number
+        meta:
+          synonyms: [ "registration_status" ]
+        description: |-
+          Status of driver's onboarding (status can be 0,1,2,3,4)
+          - 0: Onboarding document verified
+          - 1: Onboarding trainee
+          - 2: Onboarding ready
+          - 3: Onboarding acquired
+          - 4: Onboarding completed
+      - name: training_status
+        description: |-
+          Status of the driver's training completion (status can be 0,1,2,3,4)
+          - 0: trainee onboarding
+          - 1: training onboarding completed
+          - 2: payout trainee
+          - 3: trainee RNR
+          - 4: driver training completed
+        data_type: number
+      - name: training_lang
+        data_type: varchar
+        description: Language used for driver training
+      - name: termination_ts
+        data_type: timestamp_ntz
+        description: Lead termination timestamp
+      - name: terminating_admin_id
+        data_type: number
+        description: ID of the admin who terminated the driver's account
+      - name: app_version
+        data_type: number
+        description: Version of the app used by the driver
+      - name: reg_fee_payment_attempted
+        data_type: boolean
+        description: Flag indicating if the driver attempted to pay the registration fee
+      - name: vehicle_number
+        description: The registration number of the vehicle
+        data_type: varchar
+      - name: driver_onboardee_id
+        data_type: number
+        description: ID of the onboardee associated with the driver
+      - name: geo_region_id
+        description: Foreign key to geo regions table (references dim_geo_regions.geo_region_id)
+        data_type: number
+        meta:
+          synonyms: [ "city_name" ]
+        tests:
+          - relationships:
+              field: GEO_REGION_ID
+              to: ref('dim_geo_regions')
+      - name: vehicle_id
+        description: Foreign key to vehicles table (references dim_vehicles.VEHICLE_ID)
+        data_type: number
+        tests:
+          - relationships:
+              field: VEHICLE_ID
+              to: ref('dim_vehicles')
+      - name: vehicle_created_at_ist
+        description: Timestamp when the vehicle record was created, in IST
+        data_type: timestamp_ntz
+      - name: lead_rank
+        data_type: number
+        description: Ranking of the lead in the system
+      - name: lead_creation_tat_sec
+        description: Time taken for the lead record creation, in seconds, from the owner's creation timestamp
+        data_type: number
+      - name: reg_fee_paid
+        description: Flag indicating whether the registration fee has been paid for the lead
+        data_type: boolean
+      - name: reg_fee_paid_amount
+        description: Amount paid for the registration fee by the lead
+        data_type: number
+      - name: reg_fee_paid_at_ist
+        description: Timestamp when the registration fee was paid, in IST
+        data_type: timestamp_ntz
+      - name: reg_fee_refunded_amount
+        description: Amount refunded for the registration fee, if applicable
+        data_type: number
+      - name: reg_fee_refunded_at_ist
+        description: Timestamp when the registration fee was refunded, in IST
+        data_type: timestamp_ntz
+
+
+  - name: partner_performance_metrics
+    description: |-
+      Model containing detailed characteristics of partners (drivers), including activity, orders, earnings, and engagement metrics.
+      - Each row represents performance metrics for a single driver
+      - Joins with dim_drivers, dim_partner_characteristics, fact_orders, and fact_active_partners
+      - Only includes non-test drivers (is_test = 'FALSE' or NULL) and non-deleted records
+      - Filters completed orders (status = 4) and excludes test customer orders
+    config: 
+        primary_key: driver_id
+        foreign_key_relationships:
+          - source_column: vehicle_id
+            target_model: dim_vehicles
+            target_column: vehicle_id
+          - source_column: geo_region_id
+            target_model: dim_geo_regions
+            target_column: geo_region_id
+    columns:
+      - name: driver_id
+        description: Unique identifier for the driver (PK)
+        data_type: number
+        constraints:
+          - type: not_null
+        data_tests:
+          - not_null
+          - unique
+      - name: partner_owner_id
+        description: Identifier for the owner associated with the partner
+        data_type: number
+      - name: driver_created_timestamp
+        description: Timestamp indicating when the driver was created in the system
+        data_type: timestamp_ntz
+      - name: vehicle_id
+        description: Identifier for the vehicle assigned to the driver
+        data_type: number
+        data_tests:
+          - not_null
+          - relationships:
+              field: VEHICLE_ID
+              to: ref('dim_vehicles')
+      - name: geo_region_id
+        description: Geographical region where the driver operates
+        data_type: number
+        meta:
+          synonyms: [ "city_name" ]
+        data_tests:
+          - not_null
+          - relationships:
+              field: GEO_REGION_ID
+              to: ref('dim_geo_regions')
+      - name: vehicle_type
+        description: Categorizes vehicles into types such as Light Commercial Vehicles (e.g., Eeco, Tata Ace), Pickup Trucks (e.g., Tata 407, Pickup 1.7Ton), Two-Wheelers (e.g., 2 Wheeler, 2 Wheeler Low Speed EV), Three-Wheelers (e.g., 3 Wheeler Electric, E Loader), and specialized vehicles (e.g., Tata Ace Closed)
+        data_type: varchar
+      - name: active_status
+        description: |-
+          Indicates if the driver is active or inactive on the platform.
+           - 1: Terminated
+           - 0: Active
+           - Other: Pending Onboarding
+        data_type: varchar
+      - name: category
+        description: Category of the vehicle as 2W, LCV, HCV, Micro LCV, Not-Recognized
+        data_type: varchar
+        meta:
+          synonyms: [ "level0_mapping" ]
+      - name: joining_date
+        description: Date when the driver joined the platform
+        data_type: date
+      - name: joining_month
+        description: Month of joining derived from joining_date
+        data_type: date
+      - name: city_name
+        description: City where the driver is registered
+        data_type: varchar
+      - name: tier
+        description: |-
+          If the city is one of Mumbai, Delhi NCR, Bangalore, Hyderabad, Chennai, Ahmedabad, Pune, or Kolkata, classified as Tier 1. Otherwise, Tier 2
+        data_type: varchar
+      - name: weekly_category
+        description: Weekly category classification for the driver as Casual, Secondary, Primary, Dedicated
+        data_type: varchar
+      - name: monthly_category
+        description: Monthly category classification for the driver as Casual, Secondary, Primary, Dedicated
+        data_type: varchar
+      - name: flag_dco_nondco
+        description: Flag indicating whether the driver is part of the DCO/NonDCO
+        data_type: varchar
+      - name: prime_status
+        description: Status indicating if the driver is part of the prime membership
+        data_type: varchar
+      - name: prime_eligibility
+        description: Indicates whether the driver is eligible for prime membership as Eligible, Non_Eligible
+        data_type: varchar
+      - name: first_order_date
+        description: Date when the driver completed their first order
+        data_type: timestamp_ntz
+      - name: last_order_date
+        description: Date when the driver completed their most recent order
+        data_type: timestamp_ntz
+      - name: activation_days
+        description: |-
+          Number of days taken to complete the first order after joining
+          expression : first_order_date - joining_date
+        data_type: number
+      - name: age_of_partner_till_last_order
+        description: |-
+          Number of days between the first and last order
+          expression: last_order_date - first_order_date
+        data_type: number
+      - name: age_of_partner_till_today
+        description: |-
+          Number of days since the first order till today
+          expression : current_date - first_order_date
+        data_type: number
+      - name: days_since_last_order
+        description: |-
+          Number of days since the last completed order
+          expression: current_date - last_order_date
+        data_type: number
+      - name: driver_rating
+        description: Average driver rating rounded to two decimal places
+        data_type: number
+      - name: active_days
+        description: Total number of days when login hours greater than 0.5
+        data_type: number
+      - name: current_month_active_days
+        description: Total number of days in previous month when login hours greater than 0.5
+        data_type: number
+      - name: active_days_last_30_days
+        description: Total number of days in last 30 days when login hours greater than 0.5
+        data_type: number
+      - name: active_days_last_90_days
+        description: Total number of days in last 90 days when login hours greater than 0.5
+        data_type: number
+      - name: active_days_weekend
+        description: Total number of days on weekends when login hours greater than 0.5
+        data_type: number
+      - name: active_days_weekday
+        description: Total number of days on weekdays when login hours greater than 0.5
+        data_type: number
+      - name: lifetime_orders
+        description: Total number of orders completed by the driver till today
+        data_type: number
+      - name: current_month_orders
+        description: Total number of orders completed in the previous month
+        data_type: number
+      - name: total_orders_last_30_days
+        description: Total number of orders completed in the last 30 days
+        data_type: number
+      - name: total_orders_last_90_days
+        description: Total number of orders completed in the last 90 days
+        data_type: number
+      - name: avg_weekend_orders
+        description: Average number of orders completed on weekend
+        data_type: number
+      - name: avg_weekday_orders
+        description: Average number of orders completed on weekday
+        data_type: number
+      - name: lifetime_order_hours
+        description: Total order hours accumulated by the driver over their lifetime
+        data_type: number
+      - name: current_month_order_hours
+        description: Total order hours completed in the previous month
+        data_type: number
+      - name: total_order_hours_last_30_days
+        description: Total order hours completed in the last 30 days
+        data_type: number
+      - name: total_order_hours_last_90_days
+        description: Total order hours completed in the last 90 days
+        data_type: number
+      - name: avg_weekend_order_hours
+        description: Average order hours on weekends
+        data_type: number
+      - name: avg_weekday_order_hours
+        description: Average order hours on weekdays
+        data_type: number
+      - name: lifetime_total_login_hours
+        description: Total login hours accumulated over the entire lifetime
+        data_type: number
+      - name: current_month_login_hours
+        description: Total login hours in the previous calendar month
+        data_type: number
+      - name: total_login_hours_last_30_days
+        description: Total login hours in the last 30 days from the current date
+        data_type: number
+      - name: total_login_hours_last_90_days
+        description: Total login hours in the last 90 days from the current date
+        data_type: number
+      - name: avg_weekend_login_hours
+        description: Average login hours per day on weekends
+        data_type: number
+      - name: avg_weekday_login_hours
+        description: Average login hours per day on weekdays
+        data_type: number
+      - name: lifetime_total_pings
+        description: Total number of pings sent over the entire lifetime
+        data_type: number
+      - name: current_month_total_pings
+        description: Total number of pings sent in the previous calendar month
+        data_type: number
+      - name: total_pings_last_30_days
+        description: Total pings sent in the last 30 days from the current date
+        data_type: number
+      - name: total_pings_last_90_days
+        description: Total pings sent in the last 90 days from the current date
+        data_type: number
+      - name: weekend_avg_daily_total_pings
+        description: Average number of pings sent per day on weekends
+        data_type: number
+      - name: weekday_avg_daily_total_pings
+        description: Average number of pings sent per day on weekdays
+        data_type: number
+      - name: lifetime_avg_daily_accepted_pings
+        description: Total accepted pings over the entire lifetime
+        data_type: number
+      - name: current_month_accepted_pings
+        description: Total accepted pings in the previous calendar month
+        data_type: number
+      - name: accepted_pings_last_30_days
+        description: Total accepted pings in the last 30 days from the current date
+        data_type: number
+      - name: accepted_pings_last_90_days
+        description: Total accepted pings in the last 90 days from the current date
+        data_type: number
+      - name: weekend_avg_daily_accepted_pings
+        description: Average accepted pings per day on weekends
+        data_type: number
+      - name: weekday_avg_daily_accepted_pings
+        description: Average accepted pings per day on weekdays
+        data_type: number
+      - name: lifetime_avg_daily_rejected_pings
+        description: Total rejected pings over the entire lifetime
+        data_type: number
+      - name: current_month_rejected_pings
+        description: Total rejected pings in the previous calendar month
+        data_type: number
+      - name: rejected_pings_last_30_days
+        description: Total rejected pings in the last 30 days from the current date
+        data_type: number
+      - name: rejected_pings_last_90_days
+        description: Total rejected pings in the last 90 days from the current date
+        data_type: number
+      - name: weekend_avg_daily_rejected_pings
+        description: Average rejected pings per day on weekends
+        data_type: number
+      - name: weekday_avg_daily_rejected_pings
+        description: Average rejected pings per day on weekdays
+        data_type: number
+      - name: current_month_earnings
+        description: Total earnings in the previous calendar month
+        data_type: number
+      - name: earnings_last_30_days
+        description: Total earnings in the last 30 days from the current date
+        data_type: number
+      - name: earnings_last_90_days
+        description: Total earnings in the last 90 days from the current date
+        data_type: number
+      - name: weekend_avg_daily_earnings
+        description: Average earnings per day on weekends
+        data_type: number
+      - name: weekday_avg_daily_earnings
+        description: Average earnings per day on weekdays
+        data_type: number
+      - name: completion_score_last_7_days
+        description: |-
+          The completion score for the last 7 days
+          expression : Completion Score = (business_hours_completed_orders)*100 /( business_hours_allocated_orders + business_hours_rejected_pings - business_hours_custommer_cancelled_orders)
+        data_type: number
+      - name: completion_score_last_30_days
+        description: The completion score for the last 30 days
+        data_type: number
+      - name: current_day_completion_score
+        description: The completion score for the previous day
+        data_type: number
+      - name: avg_weekend_completion_score
+        description: The average completion score for weekends
+        data_type: number
+      - name: avg_weekday_completion_score
+        description: The average completion score for weekdays
+        data_type: number
+      - name: lifetime_suspension_days
+        description: Total number of suspension days over the entire lifetime
+        data_type: number
+      - name: current_month_suspension_days
+        description: Total suspension days in the previous calendar month
+        data_type: number
+      - name: suspension_days_last_30_days
+        description: Total suspension days in the last 30 days from the current date
+        data_type: number
+      - name: suspension_days_last_90_days
+        description: Total suspension days in the last 90 days from the current date
+        data_type: number
+
+  - name: partner_onboarding_vehicle_creation
+    description: |-
+      This model tracks and maps vehicle creation(that comes after owner creation step) details, vehicle document(RC, Tax, Fitness, Insurance, PUC) submission statuses, and turnaround times for owner and vehicle creation.
+      - It maps owner, vehicle details, and document submission history.
+      - Uses incremental materialization with 'ONBOARDING_VEHICLE_ID' as the primary key for this table.
+      - Captures document submission attempts, timestamps, and approval statuses.
+      - Calculates turnaround time for owner creation and vehicle onboarding.
+    config: 
+        primary_key: onboarding_vehicle_id
+        foreign_key_relationships:
+          - source_column: owner_id
+            target_model: fact_partner_onboarding_owners
+            target_column: owner_id
+          - source_column: vehicle_id
+            target_model: dim_vehicles
+            target_column: vehicle_id
+          - source_column: city_name
+            target_model: dim_geo_regions
+            target_column: city_name 
+    columns:
+      - name: owner_id
+        description: Unique identifier for the owner associated with the vehicle
+        data_type: number
+        tests:
+          - relationships:
+              field: OWNER_ID
+              to: ref('fact_partner_onboarding_owners')
+      - name: owner_created_at_ist
+        description: Timestamp when the owner record was created, in IST
+        data_type: timestamp_ntz
+      - name: supply_created_at_ist
+        description: Timestamp when the supply record was created, in IST
+        data_type: timestamp_ntz
+      - name: owner_creation_tat_sec
+        data_type: number
+        description: Time taken in seconds between the supply created and the owner created
+      - name: onboarding_vehicle_id
+        description: Unique identifier for the vehicle being onboarded
+        data_type: number
+        tests:
+          - not_null
+          - unique
+      - name: vehicle_created_at_ist
+        description: Timestamp when the vehicle record was created, in IST
+        data_type: timestamp_ntz
+      - name: vehicle_number
+        description: The registration number of the vehicle
+        data_type: varchar
+      - name: body_type
+        description: The body type of the vehicle such as bike, closed, open, scooter, backdoor_closed, bike, closed, container, open, scooter
+        data_type: varchar
+      - name: vehicle_id
+        description: Unique identifier for the vehicle, which is mapping to vehicle dimensions and specifications.
+        data_type: number
+        tests:
+          - relationships:
+              field: VEHICLE_ID
+              to: ref('dim_vehicles')
+      - name: vehicle_mapping
+        description: Standardized mapping of vehicle classification as 10ft, 14ft, 17ft, 19ft, 2W, 3W, 7ft, 8ft, 9ft, Compact_3W, E Loader, Others
+        data_type: varchar
+      - name: level0_mapping
+        description: Level 0 vehicle categorization as 2W, HCV, LCV, Micro LCV, Not-Recognized
+        data_type: varchar
+      - name: vehicle_category
+        description: The type of vehicle associated with the owner which can be 2W, Trucks, Others
+        data_type: varchar
+        meta:
+          synonyms: [ "level0_mapping" ]
+      - name: vehicle_type
+        description: Categorizes vehicles into types such as Light Commercial Vehicles (e.g., Eeco, Tata Ace), Pickup Trucks (e.g., Tata 407, Pickup 1.7Ton), Two-Wheelers (e.g., 2 Wheeler, 2 Wheeler Low Speed EV), Three-Wheelers (e.g., 3 Wheeler Electric, E Loader), and specialized vehicles (e.g., Tata Ace Closed)
+        data_type: varchar
+      - name: city_name
+        description: Name of the city where the vehicle is based
+        data_type: varchar
+        tests:
+          - relationships:
+              field: CITY_NAME
+              to: ref('dim_geo_regions')
+      - name: zone
+        description: Operational zone in which the vehicle is categorized (North, South, West)
+        data_type: varchar
+      - name: tier
+        description: |-
+          If the city is one of Mumbai, Delhi NCR, Bangalore, Hyderabad, Chennai, Ahmedabad, Pune, or Kolkata, classified as Tier 1. Otherwise, Tier 2
+        data_type: varchar
+      - name: vehicle_creation_tat_sec
+        description: Time taken for the vehicle record creation, in seconds, from the owner's creation timestamp.
+        data_type: number
+      - name: status
+        description: |-
+          Current status of the vehicle onboarding process (which can be 0,1)
+          - 0 : Active
+          - 1 : Inactive
+        data_type: number
+        meta:
+          synonyms: [ "vehicle_status", "current_state" ]
+      - name: uuid
+        description: Unique identifier for tracking the vehicle onboarding session
+        data_type: varchar
+      - name: vehicle_rank
+        description: Rank or priority assigned to the vehicle
+        data_type: number
+      - name: lead_id
+        description: Lead ID associated with the vehicle
+        data_type: number
+      - name: vehicle_rc_doc_id
+        description: Document ID for the vehicle registration certificate (RC), if available
+        data_type: number
+      - name: fitness_certificate_doc_id
+        description: Document ID for the fitness certificate, if available
+        data_type: number
+      - name: vehicle_insurance_doc_id
+        description: Document ID for the vehicle insurance, if available
+        data_type: number
+      - name: vehicle_tax_doc_id
+        description: Document ID for the vehicle tax, if available
+        data_type: number
+      - name: vehicle_puc_doc_id
+        description: Document ID for the vehicle pollution under control (PUC) certificate, if available
+        data_type: number
+      - name: vehicle_rc_updated_at
+        description: Last updated timestamp for the vehicle registration certificate (RC)
+        data_type: timestamp_ntz
+      - name: fitness_certificate_updated_at
+        description: Last updated timestamp for the fitness certificate
+        data_type: timestamp_ntz
+      - name: vehicle_insurance_updated_at
+        description: Last updated timestamp for the vehicle insurance document
+        data_type: timestamp_ntz
+      - name: vehicle_tax_updated_at
+        description: Last updated timestamp for the vehicle tax document
+        data_type: timestamp_ntz
+      - name: vehicle_puc_updated_at
+        description: Last updated timestamp for the vehicle pollution under control (PUC) certificate
+        data_type: timestamp_ntz
+      - name: vehicle_rc_num_tries
+        description: Total number of upload attempts for the vehicle registration certificate (RC)
+        data_type: number
+      - name: fitness_certificate_num_tries
+        description: Total number of upload attempts for the fitness certificate
+        data_type: number
+      - name: vehicle_insurance_num_tries
+        description: Total number of upload attempts for the vehicle insurance document
+        data_type: number
+      - name: vehicle_tax_num_tries
+        description: Total number of upload attempts for the vehicle tax document
+        data_type: number
+      - name: vehicle_puc_num_tries
+        description: Total number of upload attempts for the vehicle pollution under control (PUC) certificate
+        data_type: number
+      - name: vehicle_rc_uploaded
+        description: Flag indicating whether the vehicle registration certificate (RC) has been uploaded.
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+      - name: fitness_certificate_uploaded
+        description: Flag indicating whether the fitness certificate for the vehicle has been uploaded
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+      - name: vehicle_insurance_uploaded
+        description: Flag indicating whether the vehicle insurance document has been uploaded
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+      - name: vehicle_tax_uploaded
+        description: Flag indicating whether the vehicle tax document has been uploaded.
+        data_type: boolean
+      - name: vehicle_puc_uploaded
+        description: Flag indicating whether the vehicle's pollution under control (PUC) certificate has been uploaded.
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+
+  - name: partner_onboarding_owner_creation
+    description: |-
+      This model tracks the document submission status and turnaround times for supply leads(when a driver starts their onboarding journey, they are called as supply leads).
+      - Tracks the journey from supply lead creation to owner creation.
+      - It consolidates supply lead data, owner details, and document(owner Aadhar, PAN & Selfie) submission ids.
+      - Uses incremental materialization with 'SUPPLY_LEAD_ID' as the primary key for this table.
+      - Captures document submission attempts, timestamps, and submission statuses.
+      - Calculates turnaround time for owner creation and document submission.
+    config: 
+        primary_key: supply_lead_id
+        foreign_key_relationships:
+          - source_column: owner_id
+            target_model: fact_partner_onboarding_owners
+            target_column: owner_id
+    columns:
+      - name: supply_lead_id
+        description: Unique identifier for the supply lead
+        data_type: number
+        tests:
+          - not_null
+      - name: mobile
+        description: Mobile number associated with the supply lead
+        data_type: varchar
+      - name: supply_created_at_ist
+        description: Timestamp when the supply lead was created, in IST
+        data_type: timestamp_ntz
+      - name: supply_lead_rnk
+        description: Rank or priority assigned to the supply lead
+        data_type: number
+      - name: owner_id
+        description: Foreign key to owners table (references fact_partner_onboarding_owners.owner_id)
+        data_type: number
+        tests:
+          - relationships:
+              field: OWNER_ID
+              to: ref('fact_partner_onboarding_owners')
+      - name: owner_created_at_ist
+        description: Timestamp when the owner record was created, in IST
+        data_type: timestamp_ntz
+      - name: owner_id_doc_id
+        description: Document ID for the Aadhar document of the owner, if available
+        data_type: number
+      - name: pan_card_doc_id
+        description: Document ID for the PAN card of the owner, if available
+        data_type: number
+      - name: owner_selfie_doc_id
+        description: Document ID for the owner's selfie, if available
+        data_type: number
+      - name: owner_id_updated_at
+        description: Last updated timestamp for the Aadhar document
+        data_type: timestamp_ntz
+      - name: pan_card_updated_at
+        description: Last updated timestamp for the PAN card document
+        data_type: timestamp_ntz
+      - name: owner_selfie_updated_at
+        description: Last updated timestamp for the owner's selfie
+        data_type: timestamp_ntz
+      - name: owner_id_num_tries
+        description: Total number of upload attempts for the Aadhar document
+        data_type: number
+      - name: pan_card_num_tries
+        description: Total number of upload attempts for the PAN card document
+        data_type: number
+      - name: owner_selfie_num_tries
+        description: Total number of upload attempts for the owner's selfie
+        data_type: number
+      - name: aadhar_uploaded
+        description: Flag indicating whether the Aadhar document has been uploaded by the owner
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+      - name: pan_uploaded
+        description: Flag indicating whether the PAN card document has been uploaded by the owner
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+      - name: selfie_uploaded
+        description: Flag indicating whether the selfie document has been uploaded by the owner
+        data_type: boolean
+        tests:
+          - accepted_values:
+              values: ["TRUE", "FALSE"]
+      - name: owner_creation_tat_sec
+        description: Time taken for the owner record creation, in seconds, since the supply lead was created
+        data_type: number
+      - name: doc_submission_tat
+        description: Time taken for the document submission process, in seconds, from supply lead creation to the last document update
+        data_type: number
+
+  - name: partner_onboarding_driver_creation
+    description: |-
+      This model contains driver creation & activation details post the completion of onboarding process(completed last step which is salesforce document verfication).
+      - Contains data about the driver, their owner, vehicle, and their onboarding status, training status(includes information dummy order completion).
+      - Includes both the first 30 days and the first 7 days of order allocations and completions.
+      - Calculates earnings and orders completed within these periods.
+      - Uses incremental materialization with 'driver_id' as the primary key for this table.
+      - Here partner and driver are used interchangeably.
+    config: 
+        primary_key: driver_id
+        foreign_key_relationships:
+          - source_column: owner_id
+            target_model: fact_partner_onboarding_owners
+            target_column: owner_id
+          - source_column: vehicle_id
+            target_model: dim_vehicles
+            target_column: vehicle_id
+          - source_column: CITY_NAME
+            target_model: dim_geo_regions
+            target_column: CITY_NAME
+    columns:
+      - name: driver_id
+        description: |-
+          Unique driver identifier (PK)
+        data_type: number
+        tests:
+          - not_null
+          - unique
+      - name: driver_created_at_ist
+        description: Timestamp when the driver record was created, in IST
+        data_type: timestamp_ntz
+      - name: date_of_join
+        description: Date the driver joined the platform
+        data_type: date
+      - name: active_status
+        description: |-
+          Indicates if the driver is active or inactive on the platform.
+          - 1: Terminated
+          - 0: Active
+          - Other: Pending Onboarding
+        data_type: number
+      - name: partner_owner_id
+        description: |-
+          Unique identifier for the owner of the partner.
+        data_type: number
+      - name: owner_id
+        description: |-
+          Foreign key to owners table (references fact_partner_onboarding_owners.owner_id)
+        data_type: number
+        tests:
+          - relationships:
+              field: OWNER_ID
+              to: ref('fact_partner_onboarding_owners')
+      - name: supply_created_at_ist
+        description: Timestamp when the supply was created, in IST
+        data_type: timestamp_ntz
+      - name: owner_created_at_ist
+        description: Timestamp when the owner was created, in IST
+        data_type: timestamp_ntz
+      - name: vehicle_created_at_ist
+        description: Timestamp when the vehicle was created, in IST
+        data_type: timestamp_ntz
+      - name: vehicle_number
+        description: Vehicle number associated with the driver
+        data_type: varchar
+      - name: vehicle_id
+        description: |-
+          Foreign key to vehicles table (references dim_vehicles.VEHICLE_ID)
+        data_type: number
+        tests:
+          - relationships:
+              field: VEHICLE_ID
+              to: ref('dim_vehicles')
+      - name: vehicle_type
+        description: Categorizes vehicles into types such as Light Commercial Vehicles (e.g., Eeco, Tata Ace), Pickup Trucks (e.g., Tata 407, Pickup 1.7Ton), Two-Wheelers (e.g., 2 Wheeler, 2 Wheeler Low Speed EV), Three-Wheelers (e.g., 3 Wheeler Electric, E Loader), and specialized vehicles (e.g., Tata Ace Closed)
+        data_type: varchar
+      - name: category_segment
+        description: Segment classification of the vehicle as 2.5T+, 2W, 3W, 7ft, 8ft, 9ft, Champion, Compact 3W, E Loader, EV, Eeco, Not-Recognized, Upto 2.5T
+        data_type: varchar
+      - name: vehicle_mapping
+        description: Mapping of the vehicle to a specific classification as 10ft, 14ft, 17ft, 19ft, 2W, 3W, 7ft, 8ft, 9ft, Compact_3W, E Loader, Others
+        data_type: varchar
+      - name: level0_mapping
+        description: Classification of the vehicle as 2W, LCV, HCV, Micro LCV, Not-Recognized. This mapping is used for the vehicle category.
+        data_type: varchar
+      - name: city_name
+        description:  Foreign key to geo regions table (references dim_geo_regions.city_name)
+        data_type: varchar
+        tests:
+          - relationships:
+              field: CITY_NAME
+              to: ref('dim_geo_regions')
+      - name: zone
+        description: Zone classification for the driver's location(It can be West, North, South)
+        data_type: varchar
+      - name: tier
+        description: |-
+          If the city is one of Mumbai, Delhi NCR, Bangalore, Hyderabad, Chennai, Ahmedabad, Pune, or Kolkata, classified as Tier 1, Otherwise, Tier 2
+        data_type: varchar
+      - name: lead_created_at_ist
+        description: Timestamp when the lead record was created, in IST
+        data_type: timestamp_ntz
+      - name: owner_driver
+        description: Indicates if the driver is assigned as the lead owner
+        data_type: boolean
+      - name: reg_fee_paid_at_ist
+        description: Timestamp when the registration fee was paid, in IST
+        data_type: timestamp_ntz
+      - name: onboarding_status
+        description: |-
+          Status of driver's onboarding (status can be 0,1,2,3,4)
+          - 0: onboarding document verified
+          - 1: onboarding trainee
+          - 2: onboarding ready
+          - 3: onboarding acquired
+          - 4  onboarding completed
+        data_type: number
+        meta:
+          synonyms: [ "registration_status" ]
+      - name: training_status
+        description: |-
+          Status of the driver's training completion (status can be 0,1,2,3,4)
+          - 0: trainee onboarding
+          - 1: training onboarding completed
+          - 2: payout trainee
+          - 3: trainee RNR
+          - 4: driver training completed
+        data_type: number
+      - name: first_dummy_order_allocated_ts_ist
+        description: Timestamp when the first dummy order was allocated to the driver, in IST
+        data_type: timestamp_ntz
+      - name: first_dummy_order_completed_ts_ist
+        description: Timestamp when the first dummy order was completed by the driver, in IST where order status=4
+        data_type: timestamp_ntz
+      - name: first_spot_order_allocated_ts_ist
+        description: Timestamp when the first spot order was allocated to the driver, in IST.
+        data_type: timestamp_ntz
+      - name: first_spot_order_completed_ts_ist
+        description: Timestamp when the first spot order was completed by the driver, in IST where order status=4
+        data_type: timestamp_ntz
+      - name: dummy_orders_allocated
+        description: Number of dummy orders allocated to the driver
+        data_type: number
+      - name: dummy_orders_completed
+        description: Number of dummy orders completed by the driver where order status=4
+        data_type: number
+      - name: first_30d_orders_allocated
+        description: Number of orders allocated to the driver within the first 30 days of activation
+        data_type: number
+      - name: first_7d_orders_allocated
+        description: Number of orders allocated to the driver within the first 7 days of activation
+        data_type: number
+      - name: first_30d_orders_done
+        description: Number of orders completed by the driver within the first 30 days of activation where order status=4
+        data_type: number
+      - name: first_7d_orders_done
+        description: Number of orders completed by the driver within the first 7 days of activation where order status=4
+        data_type: number
+      - name: first_30d_earnings
+        description: Total earnings of the driver within the first 30 days of activation
+        data_type: number
+      - name: first_7d_earnings
+        description: Total earnings of the driver within the first 7 days of activation
+        data_type: number
+      - name: vehicle_category
+        description: The type of vehicle associated with the owner 2W, LCV, HCV, Not Recognized
+        data_type: varchar
+        meta:
+          synonyms: [ "level0_mapping" ]
+
+  - name: partner_onboarding_document_approval
+    description: |
+      Model contains aggregated counts for various document types and their status at a day level.
+      - Uses `fact_partner_onboarding_document_history` to fetch onboarding document details.
+      - Categorizes `actioned_by` field into 'manual' (processed by Porter employees) and 'auto' (system-processed).
+      - Aggregates document counts based on status id, document name, and status.
+      - Only includes valid document records and excludes irrelevant or test records.
+
+    columns:
+      - name: doc_created_at_ist_daywise
+        description: Date (IST) when the document status was recorded, truncated to day level
+        data_type: timestamp_ntz
+        tests:
+          - not_null
+
+      - name: document_name
+        description: Name of the onboarding document
+        data_type: varchar
+        tests:
+          - not_null
+
+      - name: doc_status_id
+        description: Unique identifier for the document status (e.g., 1,2,3,4,5)
+        data_type: number
+        meta:
+          synonyms: ["status_id", "document_status_id"]
+        tests:
+          - not_null
+
+      - name: doc_status
+        description: |
+          Current status of the document, where:
+          - 1 : Waiting for Approval
+          - 2 : Accepted
+          - 3 : Rejected
+          - 4 : Submitted
+          - 5 : Auto Approved
+        data_type: varchar
+        meta:
+          synonyms: ["document_status"]
+        tests:
+          - not_null
+
+      - name: actual_actioned_by
+        description: Indicates if the document was processed as 'auto', 'manual', or 'null'
+        data_type: varchar
+
+      - name: doc_status_reason
+        description: Reason associated with the document's current status, if applicable
+        data_type: varchar
+
+      - name: doc_count
+        description: Number of documents in the given status for the specified day
+        data_type: number
+        tests:
+          - not_null
+
+  - name: dim_partner_characteristics
+    description:
+     This model captures key characteristics of partners and their vehicles
+      - Tracks partner ownership status (DCO or Non-DCO), Prime or Non-Prime classification, and assigned vehicle type.
+      - Maps the geographic location of drivers and their operational city tier classification.
+      - Categorizes drivers weekly and monthly based on engagement levels (Casual, Secondary, Primary, Dedicated).
+      - Monitors driver activity status and records their joining date for trend analysis.
+    config: 
+        primary_key: driver_id
+    columns:
+      - name: driver_id
+        description: Unique identifier for the driver (PK)
+        data_type: number
+        data_tests:
+          - not_null
+          - unique
+      - name: vehicle_id
+        description: Unique identifier for the vehicle assigned to the driver
+        data_type: number
+      - name: geo_region_id
+        description: Unique identifier for the geographic region of the driver
+        data_type: number
+      - name: vehicle_type
+        description: Type of vehicle associated with the driver
+        data_type: varchar
+      - name: active_status
+        description: |-
+          Indicates the driver's active status:
+          - 1: Terminated
+          - 0: Active
+          - Other: Pending Onboarding
+        data_type: varchar
+      - name: category
+        description: The type of vehicle associated with the owner which can be 2W, Trucks, Others
+        data_type: varchar
+      - name: joining_date
+        description: Date the driver joined the platform
+        data_type: date
+      - name: joining_month
+        description: Month of the driver’s joining, truncated to the start of the month
+        data_type: date
+      - name: city_name
+        description: Name of the city where the driver operates
+        data_type: varchar
+      - name: tier
+        description: |-
+          If the city is one of Mumbai, Delhi NCR, Bangalore, Hyderabad, Chennai, Ahmedabad, Pune, or Kolkata, classified as Tier 1. Otherwise, Tier 2
+        data_type: varchar
+      - name: weekly_category
+        description: Weekly category classification for the driver as Casual/Secondary/Primary/Dedicated
+        data_type: varchar
+      - name: monthly_category
+        description: Monthly category classification for the driver as Casual/Secondary/Primary/Dedicated
+        data_type: varchar
+      - name: flag_dco_nondco
+        description: |-
+          Classification of the partner owner as DCO/Non-DCO
+        data_type: varchar
+      - name: prime_status
+        description: |-
+          Indicates if the driver is part of the prime program:
+          - Prime: The driver is part of the prime program.
+          - Non_Prime: The driver is not part of the prime program
+        data_type: varchar
+      - name: prime_eligibility
+        description: |-
+          Indicates if the driver is eligible for the prime program:
+                    - Eligible: The driver is eligible for the prime program based on the vehicle and region.
+                    - Non_Eligible: The driver is not eligible for the prime program.
+        data_type: varchar

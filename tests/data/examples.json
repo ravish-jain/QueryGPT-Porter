@@ -1,0 +1,47 @@
+{
+
+    "examples": [
+        {
+            "question": "Show active leads count excluding terminated ones",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id FROM mart.partner_onboarding_lead_creation pl WHERE pl.termination_ts IS NULL) SELECT COUNT(DISTINCT partner_onboarding_lead_id) AS active_leads FROM leads;",
+            "tables": ["partner_onboarding_lead_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts active leads using CTE and NULL check"
+        },
+        {
+            "question": "Show count of active leads that have added a vehicle",
+            "sql":"WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL) SELECT COUNT(DISTINCT partner_onboarding_lead_id) AS leads_with_vehicle FROM leads WHERE onboarding_vehicle_id IS NOT NULL;",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts active leads that have associated vehicles using CTE and LEFT JOIN"
+        },
+        {
+            "question": "Show count of drivers created from leads who completed vehicle onboarding",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id, pl.driver_id FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL AND pv.onboarding_vehicle_id IS NOT NULL), drivers AS (SELECT d.driver_id FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id) SELECT COUNT(DISTINCT driver_id) AS drivers_created FROM drivers;",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts drivers created from leads who completed vehicle onboarding using CTE and JOINs"
+        },
+        {
+            "question": "Show count of drivers ready to take orders based on vehicle type criteria",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id, pl.driver_id, pv.level0_mapping FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL AND pv.onboarding_vehicle_id IS NOT NULL), drivers AS (SELECT d.driver_id, d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST, d.REG_FEE_PAID_AT_IST FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id) SELECT COUNT(DISTINCT d.driver_id) AS ready_to_order FROM drivers d JOIN leads l ON d.driver_id = l.driver_id WHERE (l.level0_mapping = '2W' AND d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST IS NOT NULL) OR (l.level0_mapping <> '2W' AND d.REG_FEE_PAID_AT_IST IS NOT NULL);",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "This query counts the number of drivers who are ready to take orders, either by completing a dummy order (for 2-wheelers) or paying the registration fee (for other vehicle categories) using CTEs and JOINs"
+        },
+        {
+            "question": "Show count of drivers who have completed their first real order",
+            "sql": "WITH leads AS (SELECT pl.partner_onboarding_lead_id, pl.termination_ts, pv.onboarding_vehicle_id, pl.driver_id FROM mart.partner_onboarding_lead_creation pl LEFT JOIN mart.partner_onboarding_vehicle_creation pv ON pl.partner_onboarding_lead_id = pv.lead_id WHERE pl.termination_ts IS NULL AND pv.onboarding_vehicle_id IS NOT NULL),drivers AS (SELECT d.driver_id, d.FIRST_SPOT_ORDER_COMPLETED_TS_IST FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id) SELECT COUNT(DISTINCT d.driver_id) AS first_order_completed FROM drivers d WHERE d.FIRST_SPOT_ORDER_COMPLETED_TS_IST IS NOT NULL ), drivers AS ( SELECT d.driver_id FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id) SELECT COUNT(DISTINCT driver_id) AS drivers_created FROM drivers;",
+            "tables": ["partner_onboarding_lead_creation", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "intermediate",
+            "description": "Counts drivers who have completed their first real order using CTEs and JOINs"
+        },
+        {
+            "question": "write query to get day-on-day conversion rates, driver creation time(TAT) for lead-to-driver creation in the onboarding process",
+            "sql": "WITH leads AS ( SELECT mart.PARTNER_ONBOARDING_LEAD_CREATION.* EXCLUDE (level0_mapping, vehicle_category, vehicle_mapping, vehicle_type) , mart.partner_onboarding_vehicle_creation.vehicle_category , mart.partner_onboarding_vehicle_creation.level0_mapping , mart.partner_onboarding_vehicle_creation.vehicle_mapping , mart.partner_onboarding_vehicle_creation.vehicle_type , mart.partner_onboarding_vehicle_creation.onboarding_vehicle_id FROM mart.PARTNER_ONBOARDING_LEAD_CREATION JOIN mart.partner_onboarding_vehicle_creation ON mart.PARTNER_ONBOARDING_LEAD_CREATION.partner_onboarding_lead_id = mart.partner_onboarding_vehicle_creation.lead_id ) , drivers AS ( SELECT d.* FROM mart.partner_onboarding_driver_creation d JOIN leads l ON d.driver_id = l.driver_id ) , final AS ( SELECT l.owner_id , l.owner_created_at_ist , l.onboarding_vehicle_id , l.vehicle_created_at_ist , l.level0_mapping , l.vehicle_category , l.vehicle_mapping , l.vehicle_type , l.city_name , l.tier , l.partner_onboarding_lead_id AS onboarding_lead_id , l.lead_created_at_ist , l.owner_driver , l.reg_fee_payment_attempted , l.reg_fee_paid , l.reg_fee_paid_at_ist , CASE WHEN l.VEHICLE_CATEGORY = '2W' THEN l.REG_FEE_PAID_AT_IST WHEN l.VEHICLE_CATEGORY <> '2W' THEN l.LEAD_CREATED_AT_IST END AS ready_to_verify_at_ist , d.driver_created_at_ist , CASE WHEN l.VEHICLE_CATEGORY = '2W' AND d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST IS NOT NULL THEN TRUE WHEN l.VEHICLE_CATEGORY <> '2W' AND l.reg_fee_paid = TRUE THEN TRUE ELSE FALSE END AS ready_to_order , CASE WHEN l.VEHICLE_CATEGORY = '2W' THEN d.FIRST_DUMMY_ORDER_COMPLETED_TS_IST ELSE l.REG_FEE_PAID_AT_IST END AS ready_to_order_at_ist , CASE WHEN DATEDIFF(day, l.lead_created_at_ist, d.driver_created_at_ist) <= 7 THEN TRUE ELSE FALSE END AS driver_cvr_flag , DATEDIFF(hour, l.lead_created_at_ist, l.REG_FEE_PAID_AT_IST) AS reg_fee_payment_tat , DATEDIFF(day, l.lead_created_at_ist, d.driver_created_at_ist) AS driver_creation_tat FROM leads l LEFT JOIN drivers d ON l.driver_id = d.driver_id ) SELECT DATE_TRUNC(day, lead_created_at_ist) AS date , COUNT(DISTINCT onboarding_lead_id) AS leads_added , COUNT(DISTINCT CASE WHEN driver_created_at_ist IS NOT NULL THEN onboarding_lead_id END) AS drivers_added , COUNT(DISTINCT CASE WHEN driver_cvr_flag THEN onboarding_lead_id END) AS drivers_added_cvr , drivers_added/leads_added AS drivers_cvr , drivers_added_cvr/leads_added AS drivers_cvr_criteria , AVG(driver_creation_tat) AS avg_tat , PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY driver_creation_tat) AS p50_tat , PERCENTILE_CONT(0.75) WITHIN GROUP(ORDER BY driver_creation_tat) AS p75_tat FROM final GROUP BY 1 ORDER BY 1;",
+            "tables": ["PARTNER_ONBOARDING_LEAD_CREATION", "partner_onboarding_vehicle_creation", "partner_onboarding_driver_creation"],
+            "difficulty": "advanced",
+            "description": "This query calculates daily metrics for the lead-to-driver onboarding process, including lead conversion rates, driver creation time (TAT), and percentiles, while analyzing the efficiency and speed of converting leads into drivers based on various criteria like registration fee payment and document readiness."
+        }
+    ]
+  }  

@@ -1,0 +1,21 @@
+porter_querygpt/
+├── core/
+│   ├── __init__.py
+│   ├── explanation_generator.py
+│   ├── yaml_schema_parser.py
+│   └── few_shot_examples_loader.py
+├── configs/
+│   ├── prompts/
+│   └── schemas/
+├── ui/
+│   ├── __init__.py
+├── session_manager.py
+└── components/
+    ├── chat_history.py
+    ├── input_panel.py
+├── models/
+│   └── schema.yaml
+├── examples/
+│   └── examples.json
+├── requirements.txt
+└── app.py

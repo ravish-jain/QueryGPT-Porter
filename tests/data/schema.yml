@@ -1,0 +1,162 @@
+version: 2
+
+models:
+ - name: partner_onboarding_lead_creation
+   description: |-
+     This model aggregates data related to the onboarding process of leads by partners.
+     - Incorporates lead details, document submission statuses, registration fee payments, and refunds
+     - Tracks various documents for drivers, their upload status, and number of upload attempts
+     - Includes information on the payment and refund of registration fees
+     - Contains timestamps of all document submissions
+   config: 
+      primary_key: partner_onboarding_lead_id
+      foreign_key_relationships:
+        - source_column: owner_id
+          target_model: fact_partner_onboarding_owners
+          target_column: owner_id
+        - source_column: vehicle_id
+          target_model: dim_vehicles
+          target_column: vehicle_id
+        - source_column: PAYEE_DRIVER_ID
+          target_model: fact_drivers_registration
+          target_column: PAYEE_DRIVER_ID
+        - source_column: GEO_REGION_ID
+          target_model: dim_geo_regions
+          target_column: GEO_REGION_ID      
+   columns:
+     - name: owner_id
+       description: Foreign key to owners table (references fact_partner_onboarding_owners.owner_id)
+       data_type: number
+       tests:
+         - not_null
+         - relationships:
+             field: OWNER_ID
+             to: ref('fact_partner_onboarding_owners')
+     - name: owner_created_at_ist
+       description: Timestamp when the owner record was created, in IST
+       data_type: timestamp_ntz
+     - name: supply_created_at_ist
+       description: Timestamp when the supply record was created, in IST
+       data_type: timestamp_ntz
+     - name: owner_creation_tat_sec
+       description: Time taken in seconds between the supply created and the owner created
+       data_type: number
+     - name: partner_onboarding_lead_id
+       description:  Unique lead identifier (PK)
+       data_type: number
+       tests:
+         - not_null
+         - unique
+         - primary_key
+     - name: lead_mobile
+       description: Mobile number associated with the supply lead
+       data_type: varchar
+     - name: lead_created_at_ist
+       description: Timestamp when the lead record was created, in IST
+       data_type: timestamp_ntz
+       tests:
+         - not_null
+     - name: uuid
+       description: Universal unique ID for vehicle
+       data_type: varchar
+       tests:
+         - unique
+     - name: status
+       description: Current status of the lead (status can be 0,1,2,3)
+       data_type: number
+       meta:
+         synonyms: [ "vehicle_status", "current_state" ]
+     - name: owner_driver
+       description: Indicates if the driver is assigned as the lead owner
+       data_type: boolean
+     - name: driver_id
+       description: Foreign key to drivers registration table (references fact_drivers_registration. PAYEE_DRIVER_ID)
+       data_type: number
+       tests:
+         - relationships:
+             field: PAYEE_DRIVER_ID
+             to: ref('fact_drivers_registration')
+     - name: language
+       data_type: varchar
+       description: Language preference of the driver
+     - name: onboarding_status
+       data_type: number
+       meta:
+         synonyms: [ "registration_status" ]
+       description: |-
+         Status of driver's onboarding (status can be 0,1,2,3,4)
+         - 0: Onboarding document verified
+         - 1: Onboarding trainee
+         - 2: Onboarding ready
+         - 3: Onboarding acquired
+         - 4: Onboarding completed
+     - name: training_status
+       description: |-
+         Status of the driver's training completion (status can be 0,1,2,3,4)
+         - 0: trainee onboarding
+         - 1: training onboarding completed
+         - 2: payout trainee
+         - 3: trainee RNR
+         - 4: driver training completed
+       data_type: number
+     - name: training_lang
+       data_type: varchar
+       description: Language used for driver training
+     - name: termination_ts
+       data_type: timestamp_ntz
+       description: Lead termination timestamp
+     - name: terminating_admin_id
+       data_type: number
+       description: ID of the admin who terminated the driver's account
+     - name: app_version
+       data_type: number
+       description: Version of the app used by the driver
+     - name: reg_fee_payment_attempted
+       data_type: boolean
+       description: Flag indicating if the driver attempted to pay the registration fee
+     - name: vehicle_number
+       description: The registration number of the vehicle
+       data_type: varchar
+     - name: driver_onboardee_id
+       data_type: number
+       description: ID of the onboardee associated with the driver
+     - name: geo_region_id
+       description: Foreign key to geo regions table (references dim_geo_regions.geo_region_id)
+       data_type: number
+       meta:
+         synonyms: [ "city_name" ]
+       tests:
+         - relationships:
+             field: GEO_REGION_ID
+             to: ref('dim_geo_regions')
+     - name: vehicle_id
+       description: Foreign key to vehicles table (references dim_vehicles.VEHICLE_ID)
+       data_type: number
+       tests:
+         - relationships:
+             field: VEHICLE_ID
+             to: ref('dim_vehicles')
+     - name: vehicle_created_at_ist
+       description: Timestamp when the vehicle record was created, in IST
+       data_type: timestamp_ntz
+     - name: lead_rank
+       data_type: number
+       description: Ranking of the lead in the system
+     - name: lead_creation_tat_sec
+       description: Time taken for the lead record creation, in seconds, from the owner's creation timestamp
+       data_type: number
+     - name: reg_fee_paid
+       description: Flag indicating whether the registration fee has been paid for the lead
+       data_type: boolean
+     - name: reg_fee_paid_amount
+       description: Amount paid for the registration fee by the lead
+       data_type: number
+     - name: reg_fee_paid_at_ist
+       description: Timestamp when the registration fee was paid, in IST
+       data_type: timestamp_ntz
+     - name: reg_fee_refunded_amount
+       description: Amount refunded for the registration fee, if applicable
+       data_type: number
+     - name: reg_fee_refunded_at_ist
+       description: Timestamp when the registration fee was refunded, in IST
+       data_type: timestamp_ntz
