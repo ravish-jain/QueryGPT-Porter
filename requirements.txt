@@ -8,3 +8,4 @@ python-dotenv>=1.0.0
 faiss-cpu>=1.7.4
 langchain_community
 langchain_openai
+jq
